@@ -3,9 +3,16 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
+        MediaReceiver.cpp               \
         MediaSender.cpp                 \
         Parameters.cpp                  \
+        rtp/RTPAssembler.cpp            \
+        rtp/RTPReceiver.cpp             \
         rtp/RTPSender.cpp               \
+        sink/DirectRenderer.cpp         \
+        sink/WifiDisplaySink.cpp        \
+        SNTPClient.cpp                  \
+        TimeSyncer.cpp                  \
         source/Converter.cpp            \
         source/MediaPuller.cpp          \
         source/PlaybackSession.cpp      \
@@ -35,3 +42,87 @@ LOCAL_MODULE:= libstagefright_wfd
 LOCAL_MODULE_TAGS:= optional
 
 include $(BUILD_SHARED_LIBRARY)
+
+################################################################################
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES:= \
+        wfd.cpp                 \
+
+LOCAL_SHARED_LIBRARIES:= \
+        libbinder                       \
+        libgui                          \
+        libmedia                        \
+        libstagefright                  \
+        libstagefright_foundation       \
+        libstagefright_wfd              \
+        libutils                        \
+        liblog                          \
+
+LOCAL_MODULE:= wfd
+
+include $(BUILD_EXECUTABLE)
+
+################################################################################
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES:= \
+        udptest.cpp                 \
+
+LOCAL_SHARED_LIBRARIES:= \
+        libbinder                       \
+        libgui                          \
+        libmedia                        \
+        libstagefright                  \
+        libstagefright_foundation       \
+        libstagefright_wfd              \
+        libutils                        \
+        liblog                          \
+
+LOCAL_MODULE:= udptest
+
+include $(BUILD_EXECUTABLE)
+
+################################################################################
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES:= \
+        rtptest.cpp                 \
+
+LOCAL_SHARED_LIBRARIES:= \
+        libbinder                       \
+        libgui                          \
+        libmedia                        \
+        libstagefright                  \
+        libstagefright_foundation       \
+        libstagefright_wfd              \
+        libutils                        \
+        liblog                          \
+
+LOCAL_MODULE:= rtptest
+
+include $(BUILD_EXECUTABLE)
+
+################################################################################
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES:= \
+        nettest.cpp                     \
+
+LOCAL_SHARED_LIBRARIES:= \
+        libbinder                       \
+        libgui                          \
+        libmedia                        \
+        libstagefright                  \
+        libstagefright_foundation       \
+        libstagefright_wfd              \
+        libutils                        \
+        liblog                          \
+
+LOCAL_MODULE:= nettest
+
+include $(BUILD_EXECUTABLE)

@@ -137,6 +137,19 @@ static int ALIGN(int x, int y) {
     return (x + y - 1) & ~(y - 1);
 }
 
+
+#define S5P4418_PRIVATE 0
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+#include <hardware/gralloc.h>
+#include <cutils/native_handle.h>
+#include <gralloc_priv.h>
+
 void SoftwareRenderer::render(
         const void *data, size_t size, void *platformPrivate) {
     ANativeWindowBuffer *buf;
@@ -146,16 +159,11 @@ void SoftwareRenderer::render(
         ALOGW("Surface::dequeueBuffer returned error %d", err);
         return;
     }
-
-    GraphicBufferMapper &mapper = GraphicBufferMapper::get();
-
-    Rect bounds(mCropWidth, mCropHeight);
-
     void *dst;
-    CHECK_EQ(0, mapper.lock(
-                buf->handle, GRALLOC_USAGE_SW_WRITE_OFTEN, bounds, &dst));
-
     if (mConverter) {
+        GraphicBufferMapper &mapper = GraphicBufferMapper::get();
+        Rect bounds(mCropWidth, mCropHeight);
+        CHECK_EQ(0, mapper.lock( buf->handle, GRALLOC_USAGE_SW_WRITE_OFTEN, bounds, &dst));
         mConverter->convert(
                 data,
                 mWidth, mHeight,
@@ -163,18 +171,61 @@ void SoftwareRenderer::render(
                 dst,
                 buf->stride, buf->height,
                 0, 0, mCropWidth - 1, mCropHeight - 1);
+        CHECK_EQ(0, mapper.unlock(buf->handle));
     } else if (mColorFormat == OMX_COLOR_FormatYUV420Planar) {
+#if S5P4418_PRIVATE
+        struct private_handle_t const *hPrivate = (struct private_handle_t const *)buf->handle;
+        if( hPrivate )
+        {
+            const uint8_t *src_y = (const uint8_t *)data;
+            const uint8_t *src_u = (const uint8_t *)data + mWidth * mHeight;
+            const uint8_t *src_v = src_u + (mWidth / 2 * mHeight / 2);
+            ALOGV("~~~~~~~~~~ format = 0x%08x, fd[0] = %d, fd[1]= %d, fd[2] = %d", hPrivate->format, hPrivate->share_fds[0], hPrivate->share_fds[1], hPrivate->share_fds[2]);
+            uint8_t *dst_y = (uint8_t *)mmap( NULL, buf->stride*buf->height,   PROT_READ|PROT_WRITE, MAP_SHARED, hPrivate->share_fds[0], 0 );
+            uint8_t *dst_u = (uint8_t *)mmap( NULL, buf->stride*buf->height/4, PROT_READ|PROT_WRITE, MAP_SHARED, hPrivate->share_fds[1], 0 );
+            uint8_t *dst_v = (uint8_t *)mmap( NULL, buf->stride*buf->height/4, PROT_READ|PROT_WRITE, MAP_SHARED, hPrivate->share_fds[2], 0 );
+            size_t dst_y_size = buf->stride * buf->height;
+            size_t dst_c_stride = ALIGN(buf->stride / 2, 16);
+            size_t dst_c_size = dst_c_stride * buf->height / 2;
+            ALOGV("~~~~~~~~~~ dst_y = %p, dst_u= %p, dst_v = %p", dst_y, dst_u, dst_v);
+
+            if( dst_y != MAP_FAILED && dst_u != MAP_FAILED && dst_v != MAP_FAILED  )
+            {
+                for (int y = 0; y < mCropHeight; ++y) {
+                    memcpy(dst_y, src_y, mCropWidth);
+
+                    src_y += mWidth;
+                    dst_y += buf->stride;
+                }
+
+                for (int y = 0; y < (mCropHeight + 1) / 2; ++y) {
+                    memcpy(dst_u, src_u, (mCropWidth + 1) / 2);
+                    memcpy(dst_v, src_v, (mCropWidth + 1) / 2);
+
+                    src_u += mWidth / 2;
+                    src_v += mWidth / 2;
+                    dst_u += dst_c_stride;
+                    dst_v += dst_c_stride;
+                }
+            }
+            if( dst_y != MAP_FAILED )   munmap( dst_y, buf->stride*buf->height );
+            if( dst_u != MAP_FAILED )   munmap( dst_u, buf->stride*buf->height/4 );
+            if( dst_v != MAP_FAILED )   munmap( dst_v, buf->stride*buf->height/4 );
+        }
+#else
+        GraphicBufferMapper &mapper = GraphicBufferMapper::get();
+        Rect bounds(mCropWidth, mCropHeight);
+        CHECK_EQ(0, mapper.lock( buf->handle, GRALLOC_USAGE_SW_WRITE_OFTEN, bounds, &dst));
         const uint8_t *src_y = (const uint8_t *)data;
         const uint8_t *src_u = (const uint8_t *)data + mWidth * mHeight;
         const uint8_t *src_v = src_u + (mWidth / 2 * mHeight / 2);
-
         uint8_t *dst_y = (uint8_t *)dst;
-        size_t dst_y_size = buf->stride * buf->height;
-        size_t dst_c_stride = ALIGN(buf->stride / 2, 16);
-        size_t dst_c_size = dst_c_stride * buf->height / 2;
-        uint8_t *dst_v = dst_y + dst_y_size;
-        uint8_t *dst_u = dst_v + dst_c_size;
-
+        uint32_t dst_height_stride = ALIGN(buf->height, 16);
+        size_t dst_y_size = buf->stride * dst_height_stride;
+        size_t dst_c_stride = ALIGN(buf->stride>>1,16);
+        size_t dst_c_size = dst_c_stride * ALIGN(dst_height_stride>>1,16);
+        uint8_t *dst_u = dst_y + dst_y_size;
+        uint8_t *dst_v = dst_u + dst_c_size;
         for (int y = 0; y < mCropHeight; ++y) {
             memcpy(dst_y, src_y, mCropWidth);
 
@@ -191,44 +242,45 @@ void SoftwareRenderer::render(
             dst_u += dst_c_stride;
             dst_v += dst_c_stride;
         }
-    } else {
-        CHECK_EQ(mColorFormat, OMX_TI_COLOR_FormatYUV420PackedSemiPlanar);
-
-        const uint8_t *src_y =
-            (const uint8_t *)data;
-
-        const uint8_t *src_uv =
-            (const uint8_t *)data + mWidth * (mHeight - mCropTop / 2);
-
-        uint8_t *dst_y = (uint8_t *)dst;
-
-        size_t dst_y_size = buf->stride * buf->height;
-        size_t dst_c_stride = ALIGN(buf->stride / 2, 16);
-        size_t dst_c_size = dst_c_stride * buf->height / 2;
-        uint8_t *dst_v = dst_y + dst_y_size;
-        uint8_t *dst_u = dst_v + dst_c_size;
-
-        for (int y = 0; y < mCropHeight; ++y) {
-            memcpy(dst_y, src_y, mCropWidth);
-
-            src_y += mWidth;
-            dst_y += buf->stride;
-        }
-
-        for (int y = 0; y < (mCropHeight + 1) / 2; ++y) {
-            size_t tmp = (mCropWidth + 1) / 2;
-            for (size_t x = 0; x < tmp; ++x) {
-                dst_u[x] = src_uv[2 * x];
-                dst_v[x] = src_uv[2 * x + 1];
-            }
-
-            src_uv += mWidth;
-            dst_u += dst_c_stride;
-            dst_v += dst_c_stride;
-        }
+        CHECK_EQ(0, mapper.unlock(buf->handle));
+#endif
     }
+    // else {
+    //     CHECK_EQ(mColorFormat, OMX_TI_COLOR_FormatYUV420PackedSemiPlanar);
 
-    CHECK_EQ(0, mapper.unlock(buf->handle));
+    //     const uint8_t *src_y =
+    //         (const uint8_t *)data;
+
+    //     const uint8_t *src_uv =
+    //         (const uint8_t *)data + mWidth * (mHeight - mCropTop / 2);
+
+    //     uint8_t *dst_y = (uint8_t *)dst;
+
+    //     size_t dst_y_size = buf->stride * buf->height;
+    //     size_t dst_c_stride = ALIGN(buf->stride / 2, 16);
+    //     size_t dst_c_size = dst_c_stride * buf->height / 2;
+    //     uint8_t *dst_v = dst_y + dst_y_size;
+    //     uint8_t *dst_u = dst_v + dst_c_size;
+
+    //     for (int y = 0; y < mCropHeight; ++y) {
+    //         memcpy(dst_y, src_y, mCropWidth);
+
+    //         src_y += mWidth;
+    //         dst_y += buf->stride;
+    //     }
+
+    //     for (int y = 0; y < (mCropHeight + 1) / 2; ++y) {
+    //         size_t tmp = (mCropWidth + 1) / 2;
+    //         for (size_t x = 0; x < tmp; ++x) {
+    //             dst_u[x] = src_uv[2 * x];
+    //             dst_v[x] = src_uv[2 * x + 1];
+    //         }
+
+    //         src_uv += mWidth;
+    //         dst_u += dst_c_stride;
+    //         dst_v += dst_c_stride;
+    //     }
+    // }
 
     if ((err = mNativeWindow->queueBuffer(mNativeWindow.get(), buf,
             -1)) != 0) {

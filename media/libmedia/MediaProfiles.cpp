@@ -70,6 +70,11 @@ const MediaProfiles::NameToTagMap MediaProfiles::sCamcorderQualityNameMap[] = {
     {"720p", CAMCORDER_QUALITY_720P},
     {"1080p", CAMCORDER_QUALITY_1080P},
     {"qvga", CAMCORDER_QUALITY_QVGA},
+    // psw0523 add
+    {"uxga", CAMCORDER_QUALITY_UXGA}, // 1600x1200
+    {"vga", CAMCORDER_QUALITY_VGA},   // 640x480
+    {"svga", CAMCORDER_QUALITY_SVGA},   // 800x600
+    // end of psw0523
 
     {"timelapselow",  CAMCORDER_QUALITY_TIME_LAPSE_LOW},
     {"timelapsehigh", CAMCORDER_QUALITY_TIME_LAPSE_HIGH},
@@ -79,6 +84,11 @@ const MediaProfiles::NameToTagMap MediaProfiles::sCamcorderQualityNameMap[] = {
     {"timelapse720p", CAMCORDER_QUALITY_TIME_LAPSE_720P},
     {"timelapse1080p", CAMCORDER_QUALITY_TIME_LAPSE_1080P},
     {"timelapseqvga", CAMCORDER_QUALITY_TIME_LAPSE_QVGA},
+    // psw0523 add
+    {"timelapseuxga", CAMCORDER_QUALITY_TIME_LAPSE_UXGA},
+    {"timelapsevga", CAMCORDER_QUALITY_TIME_LAPSE_VGA},
+    {"timelapsesvga", CAMCORDER_QUALITY_TIME_LAPSE_SVGA},
+    // end of psw0523
 };
 
 /*static*/ void

@@ -39,6 +39,10 @@
 #include <media/stagefright/MetaData.h>
 #include <utils/String8.h>
 
+#ifdef ENABLE_FFMPEG_EXTRACTOR
+#include <FFmpegExtractor.h>
+#endif
+
 namespace android {
 
 sp<MetaData> MediaExtractor::getMetaData() {
@@ -55,8 +59,8 @@ sp<MediaExtractor> MediaExtractor::Create(
     sp<AMessage> meta;
 
     String8 tmp;
+    float confidence;
     if (mime == NULL) {
-        float confidence;
         if (!source->sniff(&tmp, &confidence, &meta)) {
             ALOGV("FAILED to autodetect media content.");
 
@@ -90,10 +94,37 @@ sp<MediaExtractor> MediaExtractor::Create(
         }
     }
 
+    ALOGI("Autodetected media content as '%s' with confidence %.2f", mime, confidence);
+
     MediaExtractor *ret = NULL;
     if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG4)
             || !strcasecmp(mime, "audio/mp4")) {
         ret = new MPEG4Extractor(source);
+#ifdef ENABLE_FFMPEG_EXTRACTOR
+        size_t numtracks = ret->countTracks();
+        if( numtracks == 0 )
+        {
+            delete ret;
+            ret = new FFmpegExtractor(source);
+        }
+#endif
+
+    } else if (!strcasecmp(mime, "audio/mp4")) {
+        ret = new MPEG4Extractor(source);
+#ifdef ENABLE_FFMPEG_EXTRACTOR   //  Added by Ray Park for FFMPEG Extractor 
+    }else if ( !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_AVI) ){
+        ret = new FFmpegExtractor(source);
+    }else if ( !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_WMV) ){
+        ret = new FFmpegExtractor(source);
+    }else if ( !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_RM) ){
+        ret = new FFmpegExtractor(source);
+    }else if ( !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_FLV) ){
+        ret = new FFmpegExtractor(source);
+    }else if ( !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_ASF) ){
+        ret = new FFmpegExtractor(source);
+    // }else if ( !strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MOV) ){
+    //     ret = new FFmpegExtractor(source);
+#endif
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
         ret = new MP3Extractor(source, meta);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AMR_NB)
@@ -105,17 +136,36 @@ sp<MediaExtractor> MediaExtractor::Create(
         ret = new WAVExtractor(source);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_OGG)) {
         ret = new OggExtractor(source);
-    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MATROSKA)) {
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MATROSKA) && confidence<0.61f) {
         ret = new MatroskaExtractor(source);
-    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG2TS)) {
-        ret = new MPEG2TSExtractor(source);
+
+#ifdef ENABLE_FFMPEG_EXTRACTOR
+        size_t numtracks = ret->countTracks();
+        if( numtracks == 0 )
+        {
+            delete ret;
+            ret = new FFmpegExtractor(source);
+        }
+#endif
+
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_WVM)) {
         // Return now.  WVExtractor should not have the DrmFlag set in the block below.
         return new WVMExtractor(source);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC_ADTS)) {
         ret = new AACExtractor(source, meta);
+#ifdef ENABLE_FFMPEG_EXTRACTOR   //  Added by Ray Park for FFMPEG Extractor 
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MATROSKA)) {
+        ret = new FFmpegExtractor(source);
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG2TS)) {
+        ret = new FFmpegExtractor(source);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG2PS)) {
+        ret = new FFmpegExtractor(source);
+#else
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG2PS)&&confidence>0.24f) {
         ret = new MPEG2PSExtractor(source);
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG2TS)) {
+        ret = new MPEG2TSExtractor(source);
+#endif
     }
 
     if (ret != NULL) {

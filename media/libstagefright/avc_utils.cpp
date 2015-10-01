@@ -63,7 +63,21 @@ void FindAVCDimensions(
         parseUE(&br);  // bit_depth_luma_minus8
         parseUE(&br);  // bit_depth_chroma_minus8
         br.skipBits(1);  // qpprime_y_zero_transform_bypass_flag
+#if 0	// 2014-07-21 Ray Park
         CHECK_EQ(br.getBits(1), 0u);  // seq_scaling_matrix_present_flag
+#else
+        int seq_scaling_matrix_present_flag = br.getBits(1);
+        if(seq_scaling_matrix_present_flag)
+        {          
+            int i = 0;
+            int seg_scaling_list_present_flag[12];
+            for(i=0;i<((chroma_format_idc!=3)?8:12);i++)
+            {
+                seg_scaling_list_present_flag[i] = br.getBits(1);
+                ALOGI("seg_scaling_list_present_flag[%d] = %d", i, seg_scaling_list_present_flag[i]);
+            }
+        }
+#endif
     }
 
     parseUE(&br);  // log2_max_frame_num_minus4

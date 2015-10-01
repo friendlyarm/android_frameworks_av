@@ -943,6 +943,16 @@ status_t ACodec::setComponentRole(
     };
 
     static const MimeToRole kMimeToRole[] = {
+        //  Added By 2013_07_18 Nexell
+        { MEDIA_MIMETYPE_AUDIO_AC3,
+             "audio_decoder.ac3", "audio_encoder.ac3" },
+        { MEDIA_MIMETYPE_AUDIO_DTS,
+             "audio_decoder.dts", "audio_encoder.dts" },
+        { MEDIA_MIMETYPE_AUDIO_RA,
+             "audio_decoder.ra", "audio_encoder.ra" },
+        { MEDIA_MIMETYPE_AUDIO_WMA,
+             "audio_decoder.x-ms-wma", "audio_encoder.x-ms-wma" },
+
         { MEDIA_MIMETYPE_AUDIO_MPEG,
             "audio_decoder.mp3", "audio_encoder.mp3" },
         { MEDIA_MIMETYPE_AUDIO_MPEG_LAYER_I,
@@ -965,6 +975,21 @@ status_t ACodec::setComponentRole(
             "video_decoder.avc", "video_encoder.avc" },
         { MEDIA_MIMETYPE_VIDEO_MPEG4,
             "video_decoder.mpeg4", "video_encoder.mpeg4" },
+
+        //  Added by Ray Park 20130730
+        { MEDIA_MIMETYPE_VIDEO_MPEG2,
+            "video_decoder.mpeg2", "video_encoder.mpeg2" },
+        { MEDIA_MIMETYPE_VIDEO_WMV,
+            "video_decoder.x-ms-wmv", "video_encoder.x-ms-wmv" },
+        { MEDIA_MIMETYPE_VIDEO_WVC1,
+            "video_decoder.wvc1", "video_encoder.wvc1" },
+        { MEDIA_MIMETYPE_VIDEO_VC1,
+            "video_decoder.vc1", "video_encoder.vc1" },
+        { MEDIA_MIMETYPE_VIDEO_MP43,
+            "video_decoder.mp43", "video_encoder.mp43" },
+        { MEDIA_MIMETYPE_VIDEO_RV,
+            "video_decoder.x-pn-realvideo", "video_encoder.x-pn-realvideo" },
+
         { MEDIA_MIMETYPE_VIDEO_H263,
             "video_decoder.h263", "video_encoder.h263" },
         { MEDIA_MIMETYPE_VIDEO_VP8,

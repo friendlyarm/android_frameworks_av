@@ -167,8 +167,14 @@ struct Parameters {
     // Number of zoom steps to simulate
     static const unsigned int NUM_ZOOM_STEPS = 100;
     // Max preview size allowed
+    // psw0523 fix : why this limit???
+#if 0
     static const unsigned int MAX_PREVIEW_WIDTH = 1920;
     static const unsigned int MAX_PREVIEW_HEIGHT = 1080;
+#else
+    static const unsigned int MAX_PREVIEW_WIDTH = 4096;
+    static const unsigned int MAX_PREVIEW_HEIGHT = 4096;
+#endif
     // Aspect ratio tolerance
     static const float ASPECT_RATIO_TOLERANCE = 0.001;
 

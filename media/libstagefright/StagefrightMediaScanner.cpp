@@ -42,7 +42,9 @@ static bool FileHasAcceptableExtension(const char *extension) {
         ".mpeg", ".ogg", ".mid", ".smf", ".imy", ".wma", ".aac",
         ".wav", ".amr", ".midi", ".xmf", ".rtttl", ".rtx", ".ota",
         ".mkv", ".mka", ".webm", ".ts", ".fl", ".flac", ".mxmf",
-        ".avi", ".mpeg", ".mpg", ".awb", ".mpga"
+        ".avi", ".mpeg", ".mpg", ".awb", ".mpga",
+// Added by Ray Park
+		".rmvb", ".asf", ".wmv", ".rv", ".trp", ".tp", ".rm", ".flv", ".mov"
     };
     static const size_t kNumValidExtensions =
         sizeof(kValidExtensions) / sizeof(kValidExtensions[0]);
@@ -157,6 +159,7 @@ MediaScanResult StagefrightMediaScanner::processFileInternal(
         return MEDIA_SCAN_RESULT_ERROR;
     }
 
+    //  METADATA_KEY_MIMETYPE == 12
     const char *value;
     if ((value = mRetriever->extractMetadata(
                     METADATA_KEY_MIMETYPE)) != NULL) {
@@ -171,21 +174,21 @@ MediaScanResult StagefrightMediaScanner::processFileInternal(
         int key;
     };
     static const KeyMap kKeyMap[] = {
-        { "tracknumber", METADATA_KEY_CD_TRACK_NUMBER },
-        { "discnumber", METADATA_KEY_DISC_NUMBER },
-        { "album", METADATA_KEY_ALBUM },
-        { "artist", METADATA_KEY_ARTIST },
-        { "albumartist", METADATA_KEY_ALBUMARTIST },
-        { "composer", METADATA_KEY_COMPOSER },
-        { "genre", METADATA_KEY_GENRE },
-        { "title", METADATA_KEY_TITLE },
-        { "year", METADATA_KEY_YEAR },
-        { "duration", METADATA_KEY_DURATION },
-        { "writer", METADATA_KEY_WRITER },
-        { "compilation", METADATA_KEY_COMPILATION },
-        { "isdrm", METADATA_KEY_IS_DRM },
-        { "width", METADATA_KEY_VIDEO_WIDTH },
-        { "height", METADATA_KEY_VIDEO_HEIGHT },
+        { "tracknumber", METADATA_KEY_CD_TRACK_NUMBER },    //  0
+        { "discnumber", METADATA_KEY_DISC_NUMBER },         //  14
+        { "album", METADATA_KEY_ALBUM },                    //  1
+        { "artist", METADATA_KEY_ARTIST },                  //  2
+        { "albumartist", METADATA_KEY_ALBUMARTIST },        //  13
+        { "composer", METADATA_KEY_COMPOSER },              //  4
+        { "genre", METADATA_KEY_GENRE },                    //  6
+        { "title", METADATA_KEY_TITLE },                    //  7
+        { "year", METADATA_KEY_YEAR },                      //  8
+        { "duration", METADATA_KEY_DURATION },              //  9
+        { "writer", METADATA_KEY_WRITER },                  //  11
+        { "compilation", METADATA_KEY_COMPILATION },        //  15
+        { "isdrm", METADATA_KEY_IS_DRM },                   //  22
+        { "width", METADATA_KEY_VIDEO_WIDTH },              //  18
+        { "height", METADATA_KEY_VIDEO_HEIGHT },            //  19
     };
     static const size_t kNumEntries = sizeof(kKeyMap) / sizeof(kKeyMap[0]);
 

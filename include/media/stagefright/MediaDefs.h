@@ -58,6 +58,39 @@ extern const char *MEDIA_MIMETYPE_CONTAINER_WVM;
 extern const char *MEDIA_MIMETYPE_TEXT_3GPP;
 extern const char *MEDIA_MIMETYPE_TEXT_SUBRIP;
 
+//////////////////////////////////////////////////////////////////////////////
+//
+//					Nexell Extended Media Defines
+//
+
+//	Container
+extern const char *MEDIA_MIMETYPE_CONTAINER_ASF;
+extern const char *MEDIA_MIMETYPE_CONTAINER_WMV;
+extern const char *MEDIA_MIMETYPE_CONTAINER_RM;
+extern const char *MEDIA_MIMETYPE_CONTAINER_FLV;
+extern const char *MEDIA_MIMETYPE_CONTAINER_MOV;
+
+//	Video
+extern const char *MEDIA_MIMETYPE_VIDEO_WMV;
+extern const char *MEDIA_MIMETYPE_VIDEO_RV;
+extern const char *MEDIA_MIMETYPE_VIDEO_VC1;
+extern const char *MEDIA_MIMETYPE_VIDEO_WVC1;
+extern const char *MEDIA_MIMETYPE_VIDEO_FLV;
+extern const char *MEDIA_MIMETYPE_VIDEO_MP43;
+extern const char *MEDIA_MIMETYPE_VIDEO_DIV3;
+
+//	Audo
+extern const char *MEDIA_MIMETYPE_AUDIO_AC3;
+extern const char *MEDIA_MIMETYPE_AUDIO_RA;
+extern const char *MEDIA_MIMETYPE_AUDIO_WMA;
+extern const char *MEDIA_MIMETYPE_AUDIO_APE;
+extern const char *MEDIA_MIMETYPE_AUDIO_DTS;
+
+//
+//////////////////////////////////////////////////////////////////////////////
+
+
+
 }  // namespace android
 
 #endif  // MEDIA_DEFS_H_

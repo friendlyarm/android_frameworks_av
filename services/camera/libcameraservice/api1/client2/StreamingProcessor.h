@@ -56,6 +56,10 @@ class StreamingProcessor:
     status_t updateRecordingRequest(const Parameters &params);
     status_t updateRecordingStream(const Parameters &params);
     status_t deleteRecordingStream();
+    // psw0523 add
+    status_t deletePreviewStreamNoLocked();
+    status_t deleteRecordingStreamLocked();
+    // end psw0523
     int getRecordingStreamId() const;
 
     enum StreamType {
