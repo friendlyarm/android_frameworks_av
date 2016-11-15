@@ -71,14 +71,29 @@ WifiDisplaySource::WifiDisplaySource(
 
     mSupportedSourceVideoFormats.disableAll();
 
-    mSupportedSourceVideoFormats.setNativeResolution(
-            VideoFormats::RESOLUTION_CEA, 5);  // 1280x720 p30
+    int videoResolutionType;
+    int videoResolutionGroup;
 
-    // Enable all resolutions up to 1280x720p30
-    mSupportedSourceVideoFormats.enableResolutionUpto(
-            VideoFormats::RESOLUTION_CEA, 5,
-            VideoFormats::PROFILE_CHP,  // Constrained High Profile
-            VideoFormats::LEVEL_32);    // Level 3.2
+    ALOGV("WifiDisplaySource construct");
+
+    char val_type[PROPERTY_VALUE_MAX];
+    char val_group[PROPERTY_VALUE_MAX];
+    if (property_get("media.wfd.videoresolution-type", val_type, NULL) && property_get("media.wfd.videoresolution-group", val_group, NULL)) {
+        sscanf(val_type,"%d",&videoResolutionType);
+        sscanf(val_group,"%d",&videoResolutionGroup);
+
+        ALOGV("videoResolution-Type:%d videoResolution-Group:%d", videoResolutionType, videoResolutionGroup);
+        mSupportedSourceVideoFormats.enableResolutionUpto(
+                        (VideoFormats::ResolutionType)videoResolutionType,
+                        videoResolutionGroup,
+                        VideoFormats::PROFILE_CHP,  // Constrained High Profile
+                        VideoFormats::LEVEL_32);    // Level 3.2
+    } else {
+        mSupportedSourceVideoFormats.enableResolutionUpto(
+                        VideoFormats::RESOLUTION_CEA, 5,
+                        VideoFormats::PROFILE_CHP,   // Constrained High Profile
+                        VideoFormats::LEVEL_32);     // Level 3.2
+    }
 }
 
 WifiDisplaySource::~WifiDisplaySource() {
@@ -106,7 +121,9 @@ status_t WifiDisplaySource::start(const char *iface) {
     msg->setString("iface", iface);
 
     sp<AMessage> response;
-    return PostAndAwaitResponse(msg, &response);
+    msg->post();
+    ALOGV("[%s %d]", __FUNCTION__, __LINE__);
+    return 0;
 }
 
 status_t WifiDisplaySource::stop() {
@@ -130,12 +147,22 @@ status_t WifiDisplaySource::resume() {
     return PostAndAwaitResponse(msg, &response);
 }
 
+status_t WifiDisplaySource::setRotation(int degree) {
+    sp<AMessage> msg = new AMessage(kWhatSetRotation, id());
+    msg->setInt32("degree", degree);
+
+    sp<AMessage> response;
+    msg->post();
+
+    return 0;
+}
+
 void WifiDisplaySource::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
         case kWhatStart:
         {
-            uint32_t replyID;
-            CHECK(msg->senderAwaitsResponse(&replyID));
+            uint32_t replyID=0;
+            //CHECK(msg->senderAwaitsResponse(&replyID));
 
             AString iface;
             CHECK(msg->findString("iface", &iface));
@@ -161,12 +188,15 @@ void WifiDisplaySource::onMessageReceived(const sp<AMessage> &msg) {
                 port = kWifiDisplayDefaultPort;
             }
 
+            ALOGI("Received kWhatStart on %s:%lu (err= %d)", iface.c_str(), port, err);
+
             if (err == OK) {
                 if (inet_aton(iface.c_str(), &mInterfaceAddr) != 0) {
                     sp<AMessage> notify = new AMessage(kWhatRTSPNotify, id());
 
                     err = mNetSession->createRTSPServer(
                             mInterfaceAddr, port, notify, &mSessionID);
+                    ALOGI("createRTSPServer: err = %d", err);
                 } else {
                     err = -EINVAL;
                 }
@@ -174,9 +204,9 @@ void WifiDisplaySource::onMessageReceived(const sp<AMessage> &msg) {
 
             mState = AWAITING_CLIENT_CONNECTION;
 
-            sp<AMessage> response = new AMessage;
-            response->setInt32("err", err);
-            response->postReply(replyID);
+            //sp<AMessage> response = new AMessage;
+            //response->setInt32("err", err);
+            //response->postReply(replyID);
             break;
         }
 
@@ -207,9 +237,9 @@ void WifiDisplaySource::onMessageReceived(const sp<AMessage> &msg) {
 
                     if (sessionID == mClientSessionID) {
                         mClientSessionID = 0;
-
-                        mClient->onDisplayError(
-                                IRemoteDisplayClient::kDisplayErrorUnknown);
+                        if (mClient != NULL) {
+                            mClient->onDisplayError(IRemoteDisplayClient::kDisplayErrorUnknown);
+                        }
                     }
                     break;
                 }
@@ -258,7 +288,7 @@ void WifiDisplaySource::onMessageReceived(const sp<AMessage> &msg) {
                 {
                     status_t err = onReceiveClientData(msg);
 
-                    if (err != OK) {
+                    if ((err != OK) && (mClient != NULL)) {
                         mClient->onDisplayError(
                                 IRemoteDisplayClient::kDisplayErrorUnknown);
                     }
@@ -374,9 +404,9 @@ void WifiDisplaySource::onMessageReceived(const sp<AMessage> &msg) {
 
                 mNetSession->destroySession(mClientSessionID);
                 mClientSessionID = 0;
-
-                mClient->onDisplayError(
-                        IRemoteDisplayClient::kDisplayErrorUnknown);
+                if (mClient != NULL) {
+                    mClient->onDisplayError(IRemoteDisplayClient::kDisplayErrorUnknown);
+                }
             } else {
                 scheduleReaper();
             }
@@ -393,9 +423,9 @@ void WifiDisplaySource::onMessageReceived(const sp<AMessage> &msg) {
 
             if (what == PlaybackSession::kWhatSessionDead) {
                 ALOGI("playback session wants to quit.");
-
-                mClient->onDisplayError(
-                        IRemoteDisplayClient::kDisplayErrorUnknown);
+                if (mClient != NULL) {
+                    mClient->onDisplayError(IRemoteDisplayClient::kDisplayErrorUnknown);
+                }
             } else if (what == PlaybackSession::kWhatSessionEstablished) {
                 mPlaybackSessionEstablished = true;
 
@@ -532,9 +562,9 @@ void WifiDisplaySource::onMessageReceived(const sp<AMessage> &msg) {
                 default:
                 {
                     ALOGE("HDCP failure, shutting down.");
-
-                    mClient->onDisplayError(
-                            IRemoteDisplayClient::kDisplayErrorUnknown);
+                    if (mClient != NULL) {
+                        mClient->onDisplayError(IRemoteDisplayClient::kDisplayErrorUnknown);
+                    }
                     break;
                 }
             }
@@ -544,6 +574,22 @@ void WifiDisplaySource::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatFinishStop2:
         {
             finishStop2();
+            break;
+        }
+
+        case kWhatSetRotation:
+        {
+            if ((mClientSessionID == 0) || (mClientInfo.mPlaybackSession == NULL)) {
+                ALOGE("[%s %d] kWhatSetRotation mClientSessionID:%d mPlaybackSession%x", __FUNCTION__, __LINE__, mClientSessionID, &(mClientInfo.mPlaybackSession));
+                break;
+            }
+
+            int degree = 0;
+            msg->findInt32("degree", &degree);
+
+            if (degree >= 0 && degree < 360)
+                mClientInfo.mPlaybackSession->setVideoRotation(degree);
+
             break;
         }
 
@@ -1469,7 +1515,9 @@ status_t WifiDisplaySource::onTeardownRequest(
         CHECK_NE(mStopReplyID, 0);
         finishStop();
     } else {
-        mClient->onDisplayError(IRemoteDisplayClient::kDisplayErrorUnknown);
+        if (mClient != NULL) {
+            mClient->onDisplayError(IRemoteDisplayClient::kDisplayErrorUnknown);
+        }
     }
 
     return OK;
@@ -1656,9 +1704,9 @@ void WifiDisplaySource::disconnectClient2() {
         mNetSession->destroySession(mClientSessionID);
         mClientSessionID = 0;
     }
-
-    mClient->onDisplayDisconnected();
-
+    if (mClient != NULL) {
+        mClient->onDisplayDisconnected();
+    }
     finishStopAfterDisconnectingClient();
 }
 

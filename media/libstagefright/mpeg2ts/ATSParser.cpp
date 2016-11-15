@@ -502,6 +502,12 @@ ATSParser::Stream::Stream(
                     (mProgram->parserFlags() & ALIGNED_VIDEO_DATA)
                         ? ElementaryStreamQueue::kFlag_AlignedData : 0);
             break;
+        case STREAMTYPE_H265:
+            mQueue = new ElementaryStreamQueue(
+                    ElementaryStreamQueue::H265,
+                    (mProgram->parserFlags() & ALIGNED_VIDEO_DATA)
+                        ? ElementaryStreamQueue::kFlag_AlignedData : 0);
+            break;
         case STREAMTYPE_MPEG2_AUDIO_ADTS:
             mQueue = new ElementaryStreamQueue(ElementaryStreamQueue::AAC);
             break;
@@ -522,11 +528,24 @@ ATSParser::Stream::Stream(
                     ElementaryStreamQueue::MPEG4_VIDEO);
             break;
 
-        case STREAMTYPE_LPCM_AC3:
-        case STREAMTYPE_AC3:
+        case STREAMTYPE_PCM_AUDIO:
             mQueue = new ElementaryStreamQueue(
-                    ElementaryStreamQueue::AC3);
+                    ElementaryStreamQueue::PCM_AUDIO);
             break;
+
+#if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
+        case STREAMTYPE_DDP_AC3_AUDIO:
+            // TODO FIXME verify!
+            mQueue = new ElementaryStreamQueue(
+                    ElementaryStreamQueue::DDP_AC3_AUDIO);
+            break;
+
+        case STREAMTYPE_DDP_EC3_AUDIO:
+            // TODO FIXME verify!
+            mQueue = new ElementaryStreamQueue(
+                    ElementaryStreamQueue::DDP_EC3_AUDIO);
+            break;
+#endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
 
         default:
             break;
@@ -556,11 +575,11 @@ status_t ATSParser::Stream::parse(
             && (unsigned)mExpectedContinuityCounter != continuity_counter) {
         ALOGI("discontinuity on stream pid 0x%04x", mElementaryPID);
 
+#if 0
         mPayloadStarted = false;
         mBuffer->setRange(0, 0);
         mExpectedContinuityCounter = -1;
 
-#if 0
         // Uncomment this if you'd rather see no corruption whatsoever on
         // screen and suspend updates until we come across another IDR frame.
 
@@ -568,11 +587,11 @@ status_t ATSParser::Stream::parse(
             ALOGI("clearing video queue");
             mQueue->clear(true /* clearFormat */);
         }
-#endif
 
         if (!payload_unit_start_indicator) {
             return OK;
         }
+#endif
     }
 
     mExpectedContinuityCounter = (continuity_counter + 1) & 0x0f;
@@ -622,6 +641,7 @@ status_t ATSParser::Stream::parse(
 bool ATSParser::Stream::isVideo() const {
     switch (mStreamType) {
         case STREAMTYPE_H264:
+        case STREAMTYPE_H265:
         case STREAMTYPE_MPEG1_VIDEO:
         case STREAMTYPE_MPEG2_VIDEO:
         case STREAMTYPE_MPEG4_VIDEO:
@@ -637,8 +657,11 @@ bool ATSParser::Stream::isAudio() const {
         case STREAMTYPE_MPEG1_AUDIO:
         case STREAMTYPE_MPEG2_AUDIO:
         case STREAMTYPE_MPEG2_AUDIO_ADTS:
-        case STREAMTYPE_LPCM_AC3:
-        case STREAMTYPE_AC3:
+        case STREAMTYPE_PCM_AUDIO:
+#if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
+        case STREAMTYPE_DDP_AC3_AUDIO:
+        case STREAMTYPE_DDP_EC3_AUDIO:
+#endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
             return true;
 
         default:
@@ -763,11 +786,11 @@ status_t ATSParser::Stream::parsePES(ABitReader *br) {
                 return ERROR_MALFORMED;
             }
             PTS = ((uint64_t)br->getBits(3)) << 30;
-            CHECK_EQ(br->getBits(1), 1u);
+            br->getBits(1);  // no need to check
             PTS |= ((uint64_t)br->getBits(15)) << 15;
-            CHECK_EQ(br->getBits(1), 1u);
+            br->getBits(1);
             PTS |= br->getBits(15);
-            CHECK_EQ(br->getBits(1), 1u);
+            br->getBits(1);
 
             ALOGV("PTS = 0x%016" PRIx64 " (%.2f)", PTS, PTS / 90000.0);
 
@@ -776,14 +799,14 @@ status_t ATSParser::Stream::parsePES(ABitReader *br) {
             if (PTS_DTS_flags == 3) {
                 CHECK_GE(optional_bytes_remaining, 5u);
 
-                CHECK_EQ(br->getBits(4), 1u);
+                br->getBits(4);
 
                 DTS = ((uint64_t)br->getBits(3)) << 30;
-                CHECK_EQ(br->getBits(1), 1u);
+                br->getBits(1);
                 DTS |= ((uint64_t)br->getBits(15)) << 15;
-                CHECK_EQ(br->getBits(1), 1u);
+                br->getBits(1);
                 DTS |= br->getBits(15);
-                CHECK_EQ(br->getBits(1), 1u);
+                br->getBits(1);
 
                 ALOGV("DTS = %" PRIu64, DTS);
 
@@ -797,16 +820,16 @@ status_t ATSParser::Stream::parsePES(ABitReader *br) {
             br->getBits(2);
 
             uint64_t ESCR = ((uint64_t)br->getBits(3)) << 30;
-            CHECK_EQ(br->getBits(1), 1u);
+            br->getBits(1);
             ESCR |= ((uint64_t)br->getBits(15)) << 15;
-            CHECK_EQ(br->getBits(1), 1u);
+            br->getBits(1);
             ESCR |= br->getBits(15);
-            CHECK_EQ(br->getBits(1), 1u);
+            br->getBits(1);
 
             ALOGV("ESCR = %" PRIu64, ESCR);
             MY_LOGV("ESCR_extension = %u", br->getBits(9));
 
-            CHECK_EQ(br->getBits(1), 1u);
+            br->getBits(1);
 
             optional_bytes_remaining -= 6;
         }
@@ -814,9 +837,9 @@ status_t ATSParser::Stream::parsePES(ABitReader *br) {
         if (ES_rate_flag) {
             CHECK_GE(optional_bytes_remaining, 3u);
 
-            CHECK_EQ(br->getBits(1), 1u);
+            br->getBits(1);
             MY_LOGV("ES_rate = %u", br->getBits(22));
-            CHECK_EQ(br->getBits(1), 1u);
+            br->getBits(1);
 
             optional_bytes_remaining -= 3;
         }
@@ -912,15 +935,17 @@ void ATSParser::Stream::onPayloadData(
             sp<MetaData> meta = mQueue->getFormat();
 
             if (meta != NULL) {
-                ALOGV("Stream PID 0x%08x of type 0x%02x now has data.",
+                ALOGI("Stream PID 0x%08x of type 0x%02x now has data.",
                      mElementaryPID, mStreamType);
 
+#if 0
                 const char *mime;
                 if (meta->findCString(kKeyMIMEType, &mime)
                         && !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_AVC)
                         && !IsIDR(accessUnit)) {
                     continue;
                 }
+#endif
                 mSource = new AnotherPacketSource(meta);
                 mSource->queueAccessUnit(accessUnit);
             }

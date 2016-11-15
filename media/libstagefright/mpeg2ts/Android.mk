@@ -17,6 +17,12 @@ LOCAL_CFLAGS += -Werror
 
 LOCAL_MODULE:= libstagefright_mpeg2ts
 
+ifdef DOLBY_UDC
+#ifdef DOLBY_UDC_STREAMING_HLS
+  LOCAL_CFLAGS += -DDOLBY_UDC
+  LOCAL_CFLAGS += -DDOLBY_UDC_STREAMING_HLS
+#endif
+endif #DOLBY_UDC
 ifeq ($(TARGET_ARCH),arm)
     LOCAL_CFLAGS += -Wno-psabi
 endif

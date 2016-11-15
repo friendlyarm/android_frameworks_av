@@ -43,9 +43,14 @@ struct IHDCP : public IInterface {
     // on the specified port.
     virtual status_t initAsync(const char *host, unsigned port) = 0;
 
+    // setup HDCP session with remote Tx
+    virtual status_t initAsyncRx(unsigned port) = 0;
+
     // Request to shutdown the active HDCP session.
     virtual status_t shutdownAsync() = 0;
 
+    // Request to shutdown the active HDCP session with remote source.
+    virtual status_t shutdownAsyncRx() = 0;
     // Returns the capability bitmask of this HDCP session.
     // Possible return values (please refer to HDCAPAPI.h):
     //   HDCP_CAPS_ENCRYPT: mandatory, meaning the HDCP module can encrypt
@@ -94,10 +99,11 @@ struct IHDCP : public IInterface {
     // This operation is to be synchronous, i.e. this call does not return
     // until outData contains size bytes of decrypted data.
     // Both streamCTR and inputCTR will be provided by the caller.
-    virtual status_t decrypt(
+    // Changed to static for libplayer
+    static status_t decrypt(
             const void *inData, size_t size,
             uint32_t streamCTR, uint64_t inputCTR,
-            void *outData) = 0;
+            void *outData) {return INVALID_OPERATION;};
 
 private:
     DISALLOW_EVIL_CONSTRUCTORS(IHDCP);

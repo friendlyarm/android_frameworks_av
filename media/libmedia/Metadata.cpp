@@ -127,6 +127,27 @@ bool Metadata::appendInt32(int key, int32_t val)
     }
     return ok;
 }
+#define PAD_SIZE(s) (((s)+3)&~3)
+bool Metadata::appendCString(int key, const char* val)
+{
+    if (!checkKey(key)) {
+        return false;
+    }
+    const size_t begin = mData->dataPosition();
+    bool ok = true;
+    const size_t padded = PAD_SIZE((String16(val).size()+1)*sizeof(char16_t)+sizeof(int32_t));
+
+    ok = ok && mData->writeInt32(3* sizeof(int32_t)+padded) == OK;
+    ok = ok && mData->writeInt32(key) == OK;
+    ok = ok && mData->writeInt32(STRING_VAL) == OK;
+
+    ok = ok && mData->writeString16(String16(val)) == OK;
+    if (!ok) {
+        mData->setDataPosition(begin);
+    }
+
+    return ok;
+}
 
 // Check the key (i.e metadata id) is valid if it is a system one.
 // Loop over all the exiting ones in the Parcel to check for duplicate

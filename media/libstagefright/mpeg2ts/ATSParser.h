@@ -46,6 +46,9 @@ struct ATSParser : public RefBase {
             DISCONTINUITY_AUDIO_FORMAT
                 | DISCONTINUITY_VIDEO_FORMAT
                 | DISCONTINUITY_TIME,
+
+        // data corrupt because of network error.
+        DISCONTINUITY_DATA_CORRUPTION   = 32,
     };
 
     enum Flags {
@@ -88,13 +91,12 @@ struct ATSParser : public RefBase {
         STREAMTYPE_MPEG2_AUDIO_ADTS     = 0x0f,
         STREAMTYPE_MPEG4_VIDEO          = 0x10,
         STREAMTYPE_H264                 = 0x1b,
-
-        // From ATSC A/53 Part 3:2009, 6.7.1
-        STREAMTYPE_AC3                  = 0x81,
-
-        // Stream type 0x83 is non-standard,
-        // it could be LPCM or TrueHD AC3
-        STREAMTYPE_LPCM_AC3             = 0x83,
+        STREAMTYPE_H265                 = 0x24,
+        STREAMTYPE_PCM_AUDIO            = 0x83,
+#if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
+        STREAMTYPE_DDP_AC3_AUDIO        = 0x81,
+        STREAMTYPE_DDP_EC3_AUDIO        = 0x87,
+#endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
     };
 
 protected:

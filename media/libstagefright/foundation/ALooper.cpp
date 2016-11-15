@@ -168,20 +168,33 @@ void ALooper::post(const sp<AMessage> &msg, int64_t delayUs) {
         whenUs = GetNowUs();
     }
 
-    List<Event>::iterator it = mEventQueue.begin();
-    while (it != mEventQueue.end() && (*it).mWhenUs <= whenUs) {
-        ++it;
-    }
-
     Event event;
     event.mWhenUs = whenUs;
     event.mMessage = msg;
 
-    if (it == mEventQueue.begin()) {
+    if (mEventQueue.empty()) {
         mQueueChangedCondition.signal();
+        mEventQueue.push_front(event);
     }
-
-    mEventQueue.insert(it, event);
+    else {
+        List<Event>::iterator it = mEventQueue.end();
+        while (1) {
+            --it;
+            if (it == mEventQueue.begin()) {
+                if ((*it).mWhenUs > whenUs) {
+                    mQueueChangedCondition.signal();
+                    mEventQueue.push_front(event);
+                } else {
+                    mEventQueue.insert(++it, event);
+                }
+                break;
+            }
+            else if ((*it).mWhenUs <= whenUs) {
+                mEventQueue.insert(++it, event);
+                break;
+            }
+        }
+    }
 }
 
 bool ALooper::loop() {

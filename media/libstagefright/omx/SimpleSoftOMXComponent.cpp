@@ -23,6 +23,7 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/ALooper.h>
 #include <media/stagefright/foundation/AMessage.h>
+#include <media/hardware/HardwareAPI.h>
 
 namespace android {
 
@@ -90,6 +91,12 @@ bool SimpleSoftOMXComponent::isSetParameterAllowed(
         case OMX_IndexParamAudioAac:
         {
             portIndex = ((OMX_AUDIO_PARAM_AACPROFILETYPE *)params)->nPortIndex;
+            break;
+        }
+
+        case OMX_IndexSoftOMXUseBuffer:
+        {
+            portIndex = ((UseAndroidNativeBufferParams*)params)->nPortIndex;
             break;
         }
 
@@ -174,8 +181,32 @@ OMX_ERRORTYPE SimpleSoftOMXComponent::internalSetParameter(
             }
 
             port->mDef.nBufferCountActual = defParams->nBufferCountActual;
+
+            port->mDef.format.video.nFrameWidth = defParams->format.video.nFrameWidth;
+            port->mDef.format.video.nFrameHeight = defParams->format.video.nFrameHeight;
             return OMX_ErrorNone;
         }
+
+	 case OMX_IndexSoftOMXUseBuffer:
+	 {
+		UseAndroidNativeBufferParams * bufferParams =
+			(UseAndroidNativeBufferParams *)params;
+
+		if(bufferParams->nPortIndex > 1) {
+			return OMX_ErrorUndefined;
+		}
+
+		if(bufferParams->nPortIndex == 1) {
+                  PortInfo *port = &mPorts.editItemAt(bufferParams->nPortIndex);
+				OMX_ERRORTYPE err = useBuffer_l(bufferParams->bufferHeader,
+					bufferParams->nPortIndex,
+					bufferParams->pAppPrivate,
+					port->mDef.nBufferSize,
+					const_cast<OMX_U8*>(reinterpret_cast<const OMX_U8*>(bufferParams->nativeBuffer->handle)));
+
+			return err;
+		}
+	 }
 
         default:
             return OMX_ErrorUnsupportedIndex;
@@ -189,8 +220,16 @@ OMX_ERRORTYPE SimpleSoftOMXComponent::useBuffer(
         OMX_U32 size,
         OMX_U8 *ptr) {
     Mutex::Autolock autoLock(mLock);
-    CHECK_LT(portIndex, mPorts.size());
+    return useBuffer_l(header, portIndex, appPrivate, size, ptr);
+}
 
+OMX_ERRORTYPE SimpleSoftOMXComponent::useBuffer_l(
+        OMX_BUFFERHEADERTYPE **header,
+        OMX_U32 portIndex,
+        OMX_PTR appPrivate,
+        OMX_U32 size,
+        OMX_U8 *ptr) {
+    CHECK_LT(portIndex, mPorts.size());
     *header = new OMX_BUFFERHEADERTYPE;
     (*header)->nSize = sizeof(OMX_BUFFERHEADERTYPE);
     (*header)->nVersion.s.nVersionMajor = 1;

@@ -23,6 +23,7 @@ LOCAL_SRC_FILES:=               \
     StagefrightRecorder.cpp     \
     TestPlayerStub.cpp          \
     VideoFrameScheduler.cpp     \
+    MetadataRetrieverFactory.cpp     \
 
 LOCAL_SHARED_LIBRARIES :=       \
     libbinder                   \
@@ -54,6 +55,19 @@ LOCAL_C_INCLUDES :=                                                 \
     $(TOP)/frameworks/av/media/libstagefright/webm                  \
     $(TOP)/frameworks/native/include/media/openmax                  \
     $(TOP)/external/tremolo/Tremolo                                 \
+
+
+ifeq ($(BUILD_WITH_AMLOGIC_PLAYER),true)
+    AMPLAYER_APK_DIR=$(TOP)/vendor/amlogic/frameworks/av/LibPlayer/
+    LOCAL_C_INCLUDES += \
+        $(AMPLAYER_APK_DIR)/amplayer/player/include     \
+        $(AMPLAYER_APK_DIR)/amplayer/control/include    \
+        $(AMPLAYER_APK_DIR)/amadec/include              \
+        $(AMPLAYER_APK_DIR)/amcodec/include             \
+        $(AMPLAYER_APK_DIR)/amavutils/include           \
+        $(AMPLAYER_APK_DIR)/amvdec/include           \
+        $(AMPLAYER_APK_DIR)/amffmpeg/
+endif
 
 LOCAL_MODULE:= libmediaplayerservice
 

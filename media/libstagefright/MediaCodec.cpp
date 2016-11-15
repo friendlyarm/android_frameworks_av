@@ -249,6 +249,14 @@ status_t MediaCodec::setCallback(const sp<AMessage> &callback) {
     return PostAndAwaitResponse(msg, &response);
 }
 
+// no status return.
+void MediaCodec::setNuplayerNotify(const sp<AMessage> &notify) {
+    if (mNuNotify != NULL) {
+        return;
+    }
+    mNuNotify = notify;
+}
+
 status_t MediaCodec::configure(
         const sp<AMessage> &format,
         const sp<Surface> &nativeWindow,
@@ -1031,6 +1039,16 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                     break;
                 }
 
+                case CodecBase::kWhatAudioReconfig:
+                {
+                    if (mNuNotify != NULL) {
+                        mNuNotify->setInt32("what", NU_AUDIO_RECONFIG);
+                        mNuNotify->setMessage("audio-msg", msg);
+                        mNuNotify->post();
+                    }
+                    break;
+                }
+
                 case CodecBase::kWhatFillThisBuffer:
                 {
                     /* size_t index = */updateBuffers(kPortIndexInput, msg);
@@ -1303,6 +1321,10 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
             if (flags & CONFIGURE_FLAG_ENCODE) {
                 format->setInt32("encoder", true);
                 mFlags |= kFlagIsEncoder;
+            }
+
+            if (flags & CONFIGURE_FLAG_LOW_LATENCY) {
+                format->setInt32("lowlatencymode", true);
             }
 
             extractCSD(format);

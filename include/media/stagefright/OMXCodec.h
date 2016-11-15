@@ -118,7 +118,9 @@ struct OMXCodec : public MediaSource,
             const sp<MediaCodecInfo> &list);
 
     static bool findCodecQuirks(const char *componentName, uint32_t *quirks);
-
+    virtual void adec_omx_lock_init();
+    virtual void adec_omx_lock_locked();
+    virtual void adec_omx_lock_unlocked();
 protected:
     virtual ~OMXCodec();
 
@@ -184,6 +186,7 @@ private:
     // Flags specified in the creation of the codec.
     uint32_t mFlags;
 
+    bool mNodeUseMS;
     bool mIsEncoder;
     bool mIsVideo;
     char *mMIME;
@@ -230,6 +233,8 @@ private:
     // Used to record the decoding time for an output picture from
     // a video encoder.
     List<int64_t> mDecodingTimeList;
+    pthread_mutex_t  adec_omx_lock;
+    int format_changed_flag;
 
     OMXCodec(const sp<IOMX> &omx, IOMX::node_id node,
              uint32_t quirks, uint32_t flags,
@@ -250,8 +255,18 @@ private:
 
     status_t setAC3Format(int32_t numChannels, int32_t sampleRate);
 
-    void setG711Format(int32_t numChannels);
+    void setG711Format(int32_t numChannels, int32_t sampleRate, int32_t blockalign);
+    void setADPCMFormat(int32_t numChannels, int32_t sampleRate, int32_t blockalign);
 
+    void setAsfFormat(int32_t sampleRate, int32_t numChannels, int32_t bitRate,
+                      int32_t codec_tag,  int32_t block_align, char* extradata, int32_t extradata_size);
+    void setAlacFormat(int32_t sampleRate, int32_t numChannels, char* extradata,int32_t extradata_size);
+    void setApeFormat(int32_t sampleRate, int32_t numChannels,int bitwidth, char* extradata,int32_t extradata_size);
+    void setFFmpegFormat(int32_t numChannels, int32_t bitrate, int32_t sampleRate, int32_t blockalign,
+                         int32_t codec_id,int32_t extradata_size, char* extradata);
+    void SetDtshdFormat(int32_t sampleRate, int32_t numChannels);
+
+    void setVideoInfoFormat(char* extradata,int32_t extradata_size, int width, int height);
     status_t setVideoPortFormatType(
             OMX_U32 portIndex,
             OMX_VIDEO_CODINGTYPE compressionFormat,
@@ -290,6 +305,9 @@ private:
 
     void setRawAudioFormat(
             OMX_U32 portIndex, int32_t sampleRate, int32_t numChannels);
+
+    void setRawAdpcmFormat(
+            OMX_U32 portIndex, int32_t sampleRate, int32_t numChannels, int32_t blockalign);
 
     status_t allocateBuffers();
     status_t allocateBuffersOnPort(OMX_U32 portIndex);

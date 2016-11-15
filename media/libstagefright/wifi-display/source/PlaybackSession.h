@@ -20,6 +20,7 @@
 
 #include "MediaSender.h"
 #include "VideoFormats.h"
+#include "VdinMediaSource.h"
 #include "WifiDisplaySource.h"
 
 namespace android {
@@ -78,6 +79,8 @@ struct WifiDisplaySource::PlaybackSession : public AHandler {
         kWhatSessionDestroyed,
     };
 
+    void setVideoRotation(int deree);
+
 protected:
     virtual void onMessageReceived(const sp<AMessage> &msg);
     virtual ~PlaybackSession();
@@ -123,6 +126,7 @@ private:
     int32_t mPullExtractorGeneration;
     int64_t mFirstSampleTimeRealUs;
     int64_t mFirstSampleTimeUs;
+    sp<VdinMediaSource> mVdinMediaSource;
 
     status_t setupMediaPacketizer(bool enableAudio, bool enableVideo);
 

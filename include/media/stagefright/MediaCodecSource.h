@@ -121,6 +121,8 @@ private:
     bool mEncoderReachedEOS;
     status_t mErrorCode;
 
+    bool mIsAvc;
+
     DISALLOW_EVIL_CONSTRUCTORS(MediaCodecSource);
 };
 

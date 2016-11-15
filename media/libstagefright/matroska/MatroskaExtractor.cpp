@@ -21,6 +21,7 @@
 #include "MatroskaExtractor.h"
 
 #include <media/stagefright/foundation/ADebug.h>
+#include <media/stagefright/foundation/AUtils.h>
 #include <media/stagefright/foundation/hexdump.h>
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/MediaBuffer.h>
@@ -30,8 +31,9 @@
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 #include <utils/String8.h>
-
 #include <inttypes.h>
+
+#define MKTAG(a,b,c,d) ((d) | ((c) << 8) | ((b) << 16) | ((a) << 24))
 
 namespace android {
 
@@ -135,6 +137,7 @@ private:
     enum Type {
         AVC,
         AAC,
+        RAW,
         OTHER
     };
 
@@ -235,6 +238,8 @@ MatroskaSource::MatroskaSource(
         ALOGV("mNALSizeLen = %zu", mNALSizeLen);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC)) {
         mType = AAC;
+    } else if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)){
+        mType = RAW;
     }
 }
 
@@ -433,6 +438,7 @@ void BlockIterator::seek(
         }
     }
 
+    const mkvparser::Track *pAudioTrack = NULL;
     const mkvparser::CuePoint::TrackPosition *pTP = NULL;
     const mkvparser::Track *thisTrack = pTracks->GetTrackByNumber(mTrackNum);
     if (thisTrack->GetType() == 1) { // video
@@ -446,6 +452,12 @@ void BlockIterator::seek(
             if (pTrack && pTrack->GetType() == 1 && pCues->Find(seekTimeNs, pTrack, pCP, pTP)) {
                 ALOGV("Video track located at %zu", index);
                 break;
+            }
+            if (pTrack && pTrack->GetType() == 2 && pAudioTrack == NULL) {
+                if (pCues->Find(seekTimeNs, pTrack, pCP, pTP)) {
+                   ALOGV("valid audio track located at %d", index);
+                   pAudioTrack = pTrack;
+                }
             }
         }
     }
@@ -532,6 +544,27 @@ status_t MatroskaSource::readBlock() {
 
     int64_t timeUs = mBlockIter.blockTimeUs();
 
+    if (mType == RAW) {
+        unsigned char tempdata[32768] = {0};
+        int index = 0;
+
+        for (int i = 0; i < block->GetFrameCount(); ++i) {
+            const mkvparser::Block::Frame &frame = block->GetFrame(i);
+            long n = frame.Read(mExtractor->mReader, (unsigned char *)(tempdata + index));
+            if (n != 0) {
+                mPendingFrames.clear();
+                mBlockIter.advance();
+                return ERROR_IO;
+            }
+            index += frame.len;
+        }
+
+        MediaBuffer *mbuf = new MediaBuffer(index);
+        mbuf->meta_data()->setInt64(kKeyTime, timeUs);
+        mbuf->meta_data()->setInt32(kKeyIsSyncFrame, block->IsKey());
+        memcpy((char *)mbuf->data(), tempdata, index);
+        mPendingFrames.push_back(mbuf);
+    }else
     for (int i = 0; i < block->GetFrameCount(); ++i) {
         const mkvparser::Block::Frame &frame = block->GetFrame(i);
 
@@ -631,7 +664,12 @@ status_t MatroskaSource::read(
                     TRESPASS();
             }
 
-            if (srcOffset + mNALSizeLen + NALsize > srcSize) {
+            if (srcOffset + mNALSizeLen + NALsize <= srcOffset + mNALSizeLen) {
+                frame->release();
+                frame = NULL;
+
+                return ERROR_MALFORMED;
+            } else if (srcOffset + mNALSizeLen + NALsize > srcSize) {
                 break;
             }
 
@@ -876,25 +914,38 @@ status_t addVorbisCodecInfo(
     size_t offset = 1;
     size_t len1 = 0;
     while (offset < codecPrivateSize && codecPrivate[offset] == 0xff) {
+        if (len1 > (SIZE_MAX - 0xff)) {
+            return ERROR_MALFORMED; // would overflow
+        }
         len1 += 0xff;
         ++offset;
     }
     if (offset >= codecPrivateSize) {
         return ERROR_MALFORMED;
     }
+    if (len1 > (SIZE_MAX - codecPrivate[offset])) {
+        return ERROR_MALFORMED; // would overflow
+    }
     len1 += codecPrivate[offset++];
 
     size_t len2 = 0;
     while (offset < codecPrivateSize && codecPrivate[offset] == 0xff) {
+        if (len2 > (SIZE_MAX - 0xff)) {
+            return ERROR_MALFORMED; // would overflow
+        }
         len2 += 0xff;
         ++offset;
     }
     if (offset >= codecPrivateSize) {
         return ERROR_MALFORMED;
     }
+    if (len2 > (SIZE_MAX - codecPrivate[offset])) {
+        return ERROR_MALFORMED; // would overflow
+    }
     len2 += codecPrivate[offset++];
 
-    if (codecPrivateSize < offset + len1 + len2) {
+    if (len1 > SIZE_MAX - len2 || offset > SIZE_MAX - (len1 + len2) ||
+            codecPrivateSize < offset + len1 + len2) {
         return ERROR_MALFORMED;
     }
 
@@ -970,6 +1021,36 @@ void MatroskaExtractor::addTracks() {
                     meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_VP8);
                 } else if (!strcmp("V_VP9", codecID)) {
                     meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_VP9);
+                } else if (!strcmp("V_MS/VFW/FOURCC", codecID)) {
+                    unsigned int fourcc = 0;;
+                    ALOGW("codecID=%s,codecPrivateSize=%d",codecID,codecPrivateSize);
+                    int extradata_offset = 0;
+                    if (codecPrivateSize >= 40 && codecPrivate != NULL) {
+                        fourcc = MKTAG(codecPrivate[16], codecPrivate[17],codecPrivate[18], codecPrivate[19]);
+                        ALOGW("codecPrivate[16]=%c,fourcc=%x",codecPrivate[16],fourcc);
+                        ALOGW("codecPrivate[17]=%c",codecPrivate[17]);
+                        ALOGW("codecPrivate[18]=%c",codecPrivate[18]);
+                        ALOGW("codecPrivate[19]=%c",codecPrivate[19]);
+                        extradata_offset = 40;
+                        addESDSFromCodecPrivate(
+                                meta, false, codecPrivate+extradata_offset, codecPrivateSize-extradata_offset);
+                    }
+                    if (fourcc == MKTAG('M', 'J', 'P', 'G')) {
+                        meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_MJPEG);
+                    } else if (fourcc == MKTAG('W', 'V', 'C', '1')) {
+                        meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_VC1);
+                    } else if (fourcc == MKTAG('W', 'M', 'V', '3')) {
+                        meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_WMV3);
+                    } else {
+                        ALOGW("%s is not supported.", codecID);
+                        continue;
+                    }
+                } else if (!strcmp("V_MPEG1", codecID)) {
+                        meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_MPEG2);
+                } else if (!strcmp("V_MPEG2", codecID)) {
+                        meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_MPEG2);
+                } else if (!strcmp("V_MPEG4/MS/V3", codecID)) {
+                        meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_MPEG4);
                 } else {
                     ALOGW("%s is not supported.", codecID);
                     continue;
@@ -1004,6 +1085,8 @@ void MatroskaExtractor::addTracks() {
                     mSeekPreRollNs = track->GetSeekPreRoll();
                 } else if (!strcmp("A_MPEG/L3", codecID)) {
                     meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_MPEG);
+                } else if(!strcmp("A_PCM/INT/LIT", codecID)){
+                    meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_RAW);
                 } else {
                     ALOGW("%s is not supported.", codecID);
                     continue;
@@ -1099,7 +1182,7 @@ bool SniffMatroska(
     }
 
     mimeType->setTo(MEDIA_MIMETYPE_CONTAINER_MATROSKA);
-    *confidence = 0.6;
+    *confidence = 0.01;
 
     return true;
 }

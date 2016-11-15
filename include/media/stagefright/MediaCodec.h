@@ -37,6 +37,7 @@ struct Surface;
 struct MediaCodec : public AHandler {
     enum ConfigureFlags {
         CONFIGURE_FLAG_ENCODE   = 1,
+        CONFIGURE_FLAG_LOW_LATENCY   = 2, // add by amlogic for decoder low latency mode
     };
 
     enum BufferFlags {
@@ -50,6 +51,10 @@ struct MediaCodec : public AHandler {
         CB_OUTPUT_AVAILABLE = 2,
         CB_ERROR = 3,
         CB_OUTPUT_FORMAT_CHANGED = 4,
+    };
+
+    enum {
+        NU_AUDIO_RECONFIG = 1,
     };
 
     struct BatteryNotifier;
@@ -67,6 +72,9 @@ struct MediaCodec : public AHandler {
             uint32_t flags);
 
     status_t setCallback(const sp<AMessage> &callback);
+
+    // for nuplayerdecoder.
+    void setNuplayerNotify(const sp<AMessage> &notify);
 
     status_t createInputSurface(sp<IGraphicBufferProducer>* bufferProducer);
 
@@ -230,6 +238,7 @@ private:
     sp<AMessage> mOutputFormat;
     sp<AMessage> mInputFormat;
     sp<AMessage> mCallback;
+    sp<AMessage> mNuNotify;
 
     bool mBatteryStatNotified;
     bool mIsVideo;

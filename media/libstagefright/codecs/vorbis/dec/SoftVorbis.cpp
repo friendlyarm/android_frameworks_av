@@ -83,7 +83,7 @@ void SoftVorbis::initPorts() {
     def.eDir = OMX_DirInput;
     def.nBufferCountMin = kNumBuffers;
     def.nBufferCountActual = def.nBufferCountMin;
-    def.nBufferSize = 8192;
+    def.nBufferSize = 8192*3;
     def.bEnabled = OMX_TRUE;
     def.bPopulated = OMX_FALSE;
     def.eDomain = OMX_PortDomainAudio;
@@ -177,7 +177,7 @@ OMX_ERRORTYPE SoftVorbis::internalGetParameter(
                 pcmParams->nChannels = 1;
                 pcmParams->nSamplingRate = 44100;
             } else {
-                pcmParams->nChannels = mVi->channels;
+                pcmParams->nChannels = mVi->channels>2?2:mVi->channels;
                 pcmParams->nSamplingRate = mVi->rate;
             }
 
@@ -243,6 +243,11 @@ static void makeBitReader(
     oggpack_readinit(bits, ref);
 }
 
+static inline  int16_t av_clip_int16(int a)
+{
+    if ((a+32768) & ~65535) return (a>>31) ^ 32767;
+    else                    return a;
+}
 void SoftVorbis::onQueueFilled(OMX_U32 portIndex) {
     List<BufferInfo *> &inQueue = getPortQueue(0);
     List<BufferInfo *> &outQueue = getPortQueue(1);
@@ -271,16 +276,30 @@ void SoftVorbis::onQueueFilled(OMX_U32 portIndex) {
             mVi = new vorbis_info;
             vorbis_info_init(mVi);
 
-            CHECK_EQ(0, _vorbis_unpack_info(mVi, &bits));
+            //CHECK_EQ(0, _vorbis_unpack_info(mVi, &bits));
+            if (_vorbis_unpack_info(mVi, &bits) != 0 ) {
+                mInputBufferCount=-1;//force reinit.
+                vorbis_info_clear(mVi);
+                delete mVi;
+                mVi = NULL;
+            }
         } else {
-            CHECK_EQ(0, _vorbis_unpack_books(mVi, &bits));
+            if (_vorbis_unpack_books(mVi, &bits) == 0)
+            {
+                CHECK(mState == NULL);
+                mState = new vorbis_dsp_state;
+                if (vorbis_dsp_init(mState, mVi) != 0) {
+                    mInputBufferCount = 0;//will become 1 on erase..
+                    vorbis_dsp_clear(mState);
+                    delete mState;
+                    mState = NULL;
+                }
 
-            CHECK(mState == NULL);
-            mState = new vorbis_dsp_state;
-            CHECK_EQ(0, vorbis_dsp_init(mState, mVi));
-
-            notify(OMX_EventPortSettingsChanged, 1, 0, NULL);
-            mOutputPortSettingsChange = AWAITING_DISABLED;
+                notify(OMX_EventPortSettingsChanged, 1, 0, NULL);
+                mOutputPortSettingsChange = AWAITING_DISABLED;
+            }else{
+                mInputBufferCount = 0;//force reinit,will become 1 on erase..
+            }
         }
 
         inQueue.erase(inQueue.begin());
@@ -384,8 +403,27 @@ void SoftVorbis::onQueueFilled(OMX_U32 portIndex) {
             }
             mNumFramesLeftOnPage -= numFrames;
         }
-
-        outHeader->nFilledLen = numFrames * sizeof(int16_t) * mVi->channels;
+        if (mVi->channels>2)
+        {
+           int i,j,sum,left,right;
+           int16_t *p16=(int16_t *)outHeader->pBuffer;
+           int16_t *pout16=(int16_t *)outHeader->pBuffer;
+           for (i=0;i<numFrames;i++)
+           {
+               left=*p16;
+               right=*(p16+1);
+               sum=0;
+               for (j=2;j<mVi->channels;j++)
+                   sum+=*(p16+j);
+               left  +=sum;
+               right +=sum;
+               *(pout16)   =av_clip_int16(left);
+               *(pout16+1) =av_clip_int16(right);
+               pout16+=2;
+               p16 +=mVi->channels;
+           }
+        }
+        outHeader->nFilledLen = numFrames * sizeof(int16_t) * (mVi->channels>2?2:mVi->channels);
         outHeader->nOffset = 0;
 
         outHeader->nTimeStamp =

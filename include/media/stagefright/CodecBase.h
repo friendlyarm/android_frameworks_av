@@ -41,6 +41,7 @@ struct CodecBase : public AHandler {
         kWhatInputSurfaceCreated = 'isfc',
         kWhatSignaledInputEOS    = 'seos',
         kWhatBuffersAllocated    = 'allc',
+        kWhatAudioReconfig       = 'arec',
     };
 
     virtual void setNotificationMessage(const sp<AMessage> &msg) = 0;

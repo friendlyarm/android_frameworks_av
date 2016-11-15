@@ -83,6 +83,8 @@ enum {
     GET_AUDIO_HW_SYNC
 };
 
+#define MAX_ITEMS_PER_LIST 1024
+
 class BpAudioFlinger : public BpInterface<IAudioFlinger>
 {
 public:
@@ -922,7 +924,7 @@ status_t BnAudioFlinger::onTransact(
             pid_t tid = (pid_t) data.readInt32();
             int sessionId = data.readInt32();
             int clientUid = data.readInt32();
-            status_t status;
+            status_t status = NO_ERROR;
             sp<IAudioTrack> track;
             if ((haveSharedBuffer && (buffer == 0)) ||
                     ((buffer != 0) && (buffer->pointer() == NULL))) {
@@ -955,7 +957,7 @@ status_t BnAudioFlinger::onTransact(
             size_t notificationFrames = data.readInt64();
             sp<IMemory> cblk;
             sp<IMemory> buffers;
-            status_t status;
+            status_t status = NO_ERROR;
             sp<IAudioRecord> record = openRecord(input,
                     sampleRate, format, channelMask, &frameCount, &flags, tid, &sessionId,
                     &notificationFrames,
@@ -1088,13 +1090,15 @@ status_t BnAudioFlinger::onTransact(
         case OPEN_OUTPUT: {
             CHECK_INTERFACE(IAudioFlinger, data, reply);
             audio_module_handle_t module = (audio_module_handle_t)data.readInt32();
-            audio_config_t config;
-            data.read(&config, sizeof(audio_config_t));
+            audio_config_t config = {};
+            if (data.read(&config, sizeof(audio_config_t)) != NO_ERROR) {
+                ALOGE("b/23905951");
+            }
             audio_devices_t devices = (audio_devices_t)data.readInt32();
             String8 address(data.readString8());
             audio_output_flags_t flags = (audio_output_flags_t) data.readInt32();
-            uint32_t latencyMs;
-            audio_io_handle_t output;
+            uint32_t latencyMs = 0;
+            audio_io_handle_t output = AUDIO_IO_HANDLE_NONE;
             status_t status = openOutput(module, &output, &config,
                                          &devices, address, &latencyMs, flags);
             ALOGV("OPEN_OUTPUT output, %d", output);
@@ -1133,8 +1137,10 @@ status_t BnAudioFlinger::onTransact(
             CHECK_INTERFACE(IAudioFlinger, data, reply);
             audio_module_handle_t module = (audio_module_handle_t)data.readInt32();
             audio_io_handle_t input = (audio_io_handle_t)data.readInt32();
-            audio_config_t config;
-            data.read(&config, sizeof(audio_config_t));
+            audio_config_t config = {};
+            if (data.read(&config, sizeof(audio_config_t)) != NO_ERROR) {
+                ALOGE("b/23905951");
+            }
             audio_devices_t device = (audio_devices_t)data.readInt32();
             String8 address(data.readString8());
             audio_source_t source = (audio_source_t)data.readInt32();
@@ -1170,8 +1176,8 @@ status_t BnAudioFlinger::onTransact(
         case GET_RENDER_POSITION: {
             CHECK_INTERFACE(IAudioFlinger, data, reply);
             audio_io_handle_t output = (audio_io_handle_t) data.readInt32();
-            uint32_t halFrames;
-            uint32_t dspFrames;
+            uint32_t halFrames = 0;
+            uint32_t dspFrames = 0;
             status_t status = getRenderPosition(&halFrames, &dspFrames, output);
             reply->writeInt32(status);
             if (status == NO_ERROR) {
@@ -1207,7 +1213,7 @@ status_t BnAudioFlinger::onTransact(
         } break;
         case QUERY_NUM_EFFECTS: {
             CHECK_INTERFACE(IAudioFlinger, data, reply);
-            uint32_t numEffects;
+            uint32_t numEffects = 0;
             status_t status = queryNumberEffects(&numEffects);
             reply->writeInt32(status);
             if (status == NO_ERROR) {
@@ -1217,7 +1223,7 @@ status_t BnAudioFlinger::onTransact(
         }
         case QUERY_EFFECT: {
             CHECK_INTERFACE(IAudioFlinger, data, reply);
-            effect_descriptor_t desc;
+            effect_descriptor_t desc = {};
             status_t status = queryEffect(data.readInt32(), &desc);
             reply->writeInt32(status);
             if (status == NO_ERROR) {
@@ -1229,7 +1235,7 @@ status_t BnAudioFlinger::onTransact(
             CHECK_INTERFACE(IAudioFlinger, data, reply);
             effect_uuid_t uuid;
             data.read(&uuid, sizeof(effect_uuid_t));
-            effect_descriptor_t desc;
+            effect_descriptor_t desc = {};
             status_t status = getEffectDescriptor(&uuid, &desc);
             reply->writeInt32(status);
             if (status == NO_ERROR) {
@@ -1239,15 +1245,17 @@ status_t BnAudioFlinger::onTransact(
         }
         case CREATE_EFFECT: {
             CHECK_INTERFACE(IAudioFlinger, data, reply);
-            effect_descriptor_t desc;
-            data.read(&desc, sizeof(effect_descriptor_t));
+            effect_descriptor_t desc = {};
+            if (data.read(&desc, sizeof(effect_descriptor_t)) != NO_ERROR) {
+                ALOGE("b/23905951");
+            }
             sp<IEffectClient> client = interface_cast<IEffectClient>(data.readStrongBinder());
             int32_t priority = data.readInt32();
             audio_io_handle_t output = (audio_io_handle_t) data.readInt32();
             int sessionId = data.readInt32();
-            status_t status;
-            int id;
-            int enabled;
+            status_t status = NO_ERROR;
+            int id = 0;
+            int enabled = 0;
 
             sp<IEffect> effect = createEffect(&desc, client, priority, output, sessionId,
                     &status, &id, &enabled);
@@ -1289,23 +1297,37 @@ status_t BnAudioFlinger::onTransact(
         } break;
         case LIST_AUDIO_PORTS: {
             CHECK_INTERFACE(IAudioFlinger, data, reply);
-            unsigned int num_ports = data.readInt32();
+            unsigned int numPortsReq = data.readInt32();
+            if (numPortsReq > MAX_ITEMS_PER_LIST) {
+                numPortsReq = MAX_ITEMS_PER_LIST;
+            }
+            unsigned int numPorts = numPortsReq;
             struct audio_port *ports =
-                    (struct audio_port *)calloc(num_ports,
+                    (struct audio_port *)calloc(numPortsReq,
                                                            sizeof(struct audio_port));
-            status_t status = listAudioPorts(&num_ports, ports);
+            if (ports == NULL) {
+                reply->writeInt32(NO_MEMORY);
+                reply->writeInt32(0);
+                return NO_ERROR;
+            }
+            status_t status = listAudioPorts(&numPorts, ports);
             reply->writeInt32(status);
+            reply->writeInt32(numPorts);
             if (status == NO_ERROR) {
-                reply->writeInt32(num_ports);
-                reply->write(&ports, num_ports * sizeof(struct audio_port));
+                if (numPortsReq > numPorts) {
+                    numPortsReq = numPorts;
+                }
+                reply->write(ports, numPortsReq * sizeof(struct audio_port));
             }
             free(ports);
             return NO_ERROR;
         } break;
         case GET_AUDIO_PORT: {
             CHECK_INTERFACE(IAudioFlinger, data, reply);
-            struct audio_port port;
-            data.read(&port, sizeof(struct audio_port));
+            struct audio_port port = {};
+            if (data.read(&port, sizeof(struct audio_port)) != NO_ERROR) {
+                ALOGE("b/23905951");
+            }
             status_t status = getAudioPort(&port);
             reply->writeInt32(status);
             if (status == NO_ERROR) {
@@ -1317,8 +1339,10 @@ status_t BnAudioFlinger::onTransact(
             CHECK_INTERFACE(IAudioFlinger, data, reply);
             struct audio_patch patch;
             data.read(&patch, sizeof(struct audio_patch));
-            audio_patch_handle_t handle;
-            data.read(&handle, sizeof(audio_patch_handle_t));
+            audio_patch_handle_t handle = {};
+            if (data.read(&handle, sizeof(audio_patch_handle_t)) != NO_ERROR) {
+                ALOGE("b/23905951");
+            }
             status_t status = createAudioPatch(&patch, &handle);
             reply->writeInt32(status);
             if (status == NO_ERROR) {
@@ -1336,15 +1360,27 @@ status_t BnAudioFlinger::onTransact(
         } break;
         case LIST_AUDIO_PATCHES: {
             CHECK_INTERFACE(IAudioFlinger, data, reply);
-            unsigned int num_patches = data.readInt32();
+            unsigned int numPatchesReq = data.readInt32();
+            if (numPatchesReq > MAX_ITEMS_PER_LIST) {
+                numPatchesReq = MAX_ITEMS_PER_LIST;
+            }
+            unsigned int numPatches = numPatchesReq;
             struct audio_patch *patches =
-                    (struct audio_patch *)calloc(num_patches,
+                    (struct audio_patch *)calloc(numPatchesReq,
                                                  sizeof(struct audio_patch));
-            status_t status = listAudioPatches(&num_patches, patches);
+            if (patches == NULL) {
+                reply->writeInt32(NO_MEMORY);
+                reply->writeInt32(0);
+                return NO_ERROR;
+            }
+            status_t status = listAudioPatches(&numPatches, patches);
             reply->writeInt32(status);
+            reply->writeInt32(numPatches);
             if (status == NO_ERROR) {
-                reply->writeInt32(num_patches);
-                reply->write(&patches, num_patches * sizeof(struct audio_patch));
+                if (numPatchesReq > numPatches) {
+                    numPatchesReq = numPatches;
+                }
+                reply->write(patches, numPatchesReq * sizeof(struct audio_patch));
             }
             free(patches);
             return NO_ERROR;

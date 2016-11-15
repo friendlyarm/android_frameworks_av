@@ -130,6 +130,21 @@ enum media_info_type {
 
     //9xx
     MEDIA_INFO_TIMED_TEXT_ERROR = 900,
+
+    //amlogic extend warning message type,just for notify,never force to exit player.
+    MEDIA_INFO_AMLOGIC_BASE = 8000,
+    MEDIA_INFO_AMLOGIC_VIDEO_NOT_SUPPORT=MEDIA_INFO_AMLOGIC_BASE+1,
+    MEDIA_INFO_AMLOGIC_AUDIO_NOT_SUPPORT = MEDIA_INFO_AMLOGIC_BASE+2,
+    MEDIA_INFO_AMLOGIC_NO_VIDEO = MEDIA_INFO_AMLOGIC_BASE+3,
+    MEDIA_INFO_AMLOGIC_NO_AUDIO = MEDIA_INFO_AMLOGIC_BASE+4,
+    MEDIA_INFO_AMLOGIC_SHOW_DTS_ASSET = MEDIA_INFO_AMLOGIC_BASE+5,
+    MEDIA_INFO_AMLOGIC_SHOW_DTS_EXPRESS = MEDIA_INFO_AMLOGIC_BASE+6,
+    MEDIA_INFO_AMLOGIC_SHOW_DTS_HD_MASTER_AUDIO = MEDIA_INFO_AMLOGIC_BASE+7,
+
+    //notify java app the download bitrate
+    MEDIA_INFO_DOWNLOAD_BITRATE = 0x9001,
+    //notify java app the buffering circle percent
+    MEDIA_INFO_BUFFERING_PERCENT = 0x9002,
 };
 
 
@@ -162,7 +177,44 @@ enum media_parameter_keys {
     KEY_PARAMETER_PLAYBACK_RATE_PERMILLE = 1300,                // set only
 
     // Set a Parcel containing the value of a parcelled Java AudioAttribute instance
-    KEY_PARAMETER_AUDIO_ATTRIBUTES = 1400                       // set only
+    KEY_PARAMETER_AUDIO_ATTRIBUTES = 1400,                      // set only
+
+
+    //AML Video INFO string,set only
+    KEY_PARAMETER_AML_VIDEO_POSITION_INFO = 2000,
+	 
+    //PLAYER TYPE STRING
+    KEY_PARAMETER_AML_PLAYER_TYPE_STR = 2001,
+    //PLAYER VIDEO  OUT/TYPE
+    //public static final int VIDEO_OUT_SOFT_RENDER = 0;
+    //public static final int VIDEO_OUT_HARDWARE    = 1;
+    KEY_PARAMETER_AML_PLAYER_VIDEO_OUT_TYPE = 2002,
+	
+    //amlogic private API,set only.
+    KEY_PARAMETER_AML_PLAYER_SWITCH_SOUND_TRACK     = 2003,     // string, refer to lmono,rmono,stereo, set only
+    KEY_PARAMETER_AML_PLAYER_SWITCH_AUDIO_TRACK     = 2004,     // string, refer to audio track index, set only
+    KEY_PARAMETER_AML_PLAYER_TRICKPLAY_FORWARD      = 2005,     // string, refer to forward:speed 
+    KEY_PARAMETER_AML_PLAYER_TRICKPLAY_BACKWARD     = 2006,     // string, refer to  backward:speed
+    KEY_PARAMETER_AML_PLAYER_FORCE_HARD_DECODE      = 2007,     // string, refer to mp3,etc.
+    KEY_PARAMETER_AML_PLAYER_FORCE_SOFT_DECODE      = 2008,     // string, refer to mp3,etc.
+    KEY_PARAMETER_AML_PLAYER_GET_MEDIA_INFO         = 2009,     // string, get media info
+    KEY_PARAMETER_AML_PLAYER_FORCE_SCREEN_MODE      = 2010,     // string, set screen mode
+    KEY_PARAMETER_AML_PLAYER_SET_DISPLAY_MODE       = 2011,     // string, set display mode
+    KEY_PARAMETER_AML_PLAYER_GET_DTS_ASSET_TOTAL    = 2012,     // string, get dts asset total number
+    KEY_PARAMETER_AML_PLAYER_SET_DTS_ASSET          = 2013,     // string, set dts asset 
+    KEY_PARAMETER_AML_PLAYER_HWBUFFER_STATE         = 3001,     // string,refer to stream buffer info
+    KEY_PARAMETER_AML_PLAYER_RESET_BUFFER           = 8000,     // top level seek..player need to reset & clearbuffers
+    KEY_PARAMETER_AML_PLAYER_FREERUN_MODE           = 8002,     // play ASAP...
+    KEY_PARAMETER_AML_PLAYER_ENABLE_OSDVIDEO        = 8003,     // play enable osd video for this player....
+    KEY_PARAMETER_AML_PLAYER_DIS_AUTO_BUFFER        = 8004,     // play ASAP...
+    KEY_PARAMETER_AML_PLAYER_ENA_AUTO_BUFFER        = 8005,     // play ASAP...
+    KEY_PARAMETER_AML_PLAYER_USE_SOFT_DEMUX         = 8006,     // play use soft demux
+    KEY_PARAMETER_AML_PLAYER_PR_CUSTOM_DATA         = 9001,     // string, playready, set only
+};
+
+enum video_out_type {
+    VIDEO_OUT_SOFT_RENDER = 0,
+    VIDEO_OUT_HARDWARE    = 1,
 };
 
 // Keep INVOKE_ID_* in sync with MediaPlayer.java.
@@ -173,7 +225,10 @@ enum media_player_invoke_ids {
     INVOKE_ID_SELECT_TRACK = 4,
     INVOKE_ID_UNSELECT_TRACK = 5,
     INVOKE_ID_SET_VIDEO_SCALING_MODE = 6,
-    INVOKE_ID_GET_SELECTED_TRACK = 7
+    INVOKE_ID_GET_SELECTED_TRACK = 7,
+    INVOKE_ID_NETWORK_GET_LPBUF_BUFFERED_SIZE = 8,
+    INVOKE_ID_NETWORK_GET_STREAMBUF_BUFFERED_SIZE = 9,
+    INVOKE_ID_SET_TRACK_VOLUME = 10,
 };
 
 // Keep MEDIA_TRACK_TYPE_* in sync with MediaPlayer.java.

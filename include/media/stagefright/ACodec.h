@@ -132,6 +132,7 @@ private:
         kFlagIsSecure                                 = 1,
         kFlagPushBlankBuffersToNativeWindowOnShutdown = 2,
         kFlagIsGrallocUsageProtected                  = 4,
+        kFlagLowLatencyMode                           = 8,//add by amlogic
     };
 
     struct BufferInfo {
@@ -188,12 +189,14 @@ private:
     Vector<BufferInfo> mBuffers[2];
     bool mPortEOS[2];
     status_t mInputEOSResult;
+    bool mLowLatencyMode;
 
     List<sp<AMessage> > mDeferredQueue;
 
     bool mSentFormat;
     bool mIsEncoder;
     bool mUseMetadataOnEncoderOutput;
+    bool mFatalError;
     bool mShutdownInProgress;
     bool mExplicitShutdown;
 

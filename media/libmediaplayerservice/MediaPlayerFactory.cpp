@@ -76,7 +76,7 @@ static player_type getDefaultPlayerType() {
         return STAGEFRIGHT_PLAYER;
     }
 
-    return NU_PLAYER;
+    return AMNUPLAYER;
 }
 
 status_t MediaPlayerFactory::registerFactory(IFactory* factory,
@@ -240,6 +240,12 @@ class NuPlayerFactory : public MediaPlayerFactory::IFactory {
                                float curScore) {
         static const float kOurScore = 0.8;
 
+        char value[PROPERTY_VALUE_MAX];
+        if (property_get("media.hls.use-android-nuplayer", value, NULL)
+            && (!strcasecmp(value, "true") || !strcmp(value, "1"))) {
+            return 1.1;
+        }
+
         if (kOurScore <= curScore)
             return 0.0;
 
@@ -270,7 +276,7 @@ class NuPlayerFactory : public MediaPlayerFactory::IFactory {
     virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
                                const sp<IStreamSource>& /*source*/,
                                float /*curScore*/) {
-        return 1.0;
+        return 0.8;
     }
 
     virtual sp<MediaPlayerBase> createPlayer() {

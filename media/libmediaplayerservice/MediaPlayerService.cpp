@@ -73,7 +73,6 @@
 #include "MidiFile.h"
 #include "TestPlayerStub.h"
 #include "StagefrightPlayer.h"
-#include "nuplayer/NuPlayerDriver.h"
 
 #include <OMX.h>
 
@@ -588,6 +587,11 @@ MediaPlayerService::Client::Client(
     mRetransmitEndpointValid = false;
     mAudioAttributes = NULL;
 
+    mURI = NULL;
+    mExit = false;
+    mThreadQuit = true;
+    mSourceReady = -1;
+
 #if CALLBACK_ANTAGONIZER
     ALOGD("create Antagonizer");
     mAntagonizer = new Antagonizer(notify, this);
@@ -596,11 +600,23 @@ MediaPlayerService::Client::Client(
 
 MediaPlayerService::Client::~Client()
 {
-    ALOGV("Client(%d) destructor pid = %d", mConnId, mPid);
+    {
+        Mutex::Autolock l(mSourceMutex);
+        mExit = true;
+        mSourceCondition.signal();
+    }
+    while (!mThreadQuit) {
+        Mutex::Autolock l(mQuitMutex);
+        mQuitCondition.wait(mQuitMutex);
+    }
+    ALOGI("Client(%d) destructor pid = %d", mConnId, mPid);
     mAudioOutput.clear();
     wp<Client> client(this);
     disconnect();
     mService->removeClient(client);
+    if (mURI) {
+        free((void *)mURI);
+    }
     if (mAudioAttributes != NULL) {
         free(mAudioAttributes);
     }
@@ -733,6 +749,17 @@ status_t MediaPlayerService::Client::setDataSource(
         return mStatus;
     } else {
         player_type playerType = MediaPlayerFactory::getPlayerType(this, url);
+        if (playerType == AMNUPLAYER) {
+            mHTTPService = httpService;
+            if (mURI) {
+                free((void *)mURI);
+            }
+            mURI = strdup(url);
+            if (headers) {
+                mHeaders = *headers;
+            }
+            createThreadEtc(playerSwitchTread, this, "switchThread", ANDROID_PRIORITY_DEFAULT);
+        }
         sp<MediaPlayerBase> p = setDataSource_pre(playerType);
         if (p == NULL) {
             return NO_INIT;
@@ -846,6 +873,7 @@ status_t MediaPlayerService::Client::setVideoSurfaceTexture(
     // disconnecting the old one.  Otherwise queue/dequeue calls could be made
     // on the disconnected ANW, which may result in errors.
     status_t err = p->setVideoSurfaceTexture(bufferProducer);
+    mSurfaceTexture = bufferProducer;
 
     disconnectNativeWindow();
 
@@ -951,7 +979,16 @@ status_t MediaPlayerService::Client::start()
 
 status_t MediaPlayerService::Client::stop()
 {
-    ALOGV("[%d] stop", mConnId);
+    {
+        Mutex::Autolock l(mSourceMutex);
+        mExit = true;
+        mSourceCondition.signal();
+    }
+    while (!mThreadQuit) {
+        Mutex::Autolock l(mQuitMutex);
+        mQuitCondition.wait(mQuitMutex);
+    }
+    ALOGI("[%d] stop", mConnId);
     sp<MediaPlayerBase> p = getPlayer();
     if (p == 0) return UNKNOWN_ERROR;
     return p->stop();
@@ -1034,7 +1071,16 @@ status_t MediaPlayerService::Client::seekTo(int msec)
 
 status_t MediaPlayerService::Client::reset()
 {
-    ALOGV("[%d] reset", mConnId);
+    {
+        Mutex::Autolock l(mSourceMutex);
+        mExit = true;
+        mSourceCondition.signal();
+    }
+    while (!mThreadQuit) {
+        Mutex::Autolock l(mQuitMutex);
+        mQuitCondition.wait(mQuitMutex);
+    }
+    ALOGI("[%d] reset", mConnId);
     mRetransmitEndpointValid = false;
     sp<MediaPlayerBase> p = getPlayer();
     if (p == 0) return UNKNOWN_ERROR;
@@ -1216,11 +1262,88 @@ void MediaPlayerService::Client::notify(
         client->addNewMetadataUpdate(metadata_type);
     }
 
+    if (msg == 0xffff) {
+        ALOGI("source ready : %d !", ext1);
+        Mutex::Autolock l(client->mSourceMutex);
+        client->mSourceReady = ext1;
+        (client->mSourceCondition).signal();
+        return;
+    }
+
     if (c != NULL) {
         ALOGV("[%d] notify (%p, %d, %d, %d)", client->mConnId, cookie, msg, ext1, ext2);
         c->notify(msg, ext1, ext2, obj);
     }
 }
+
+// static
+int MediaPlayerService::Client::playerSwitchTread(void * arg)
+{
+    Client * p = (Client *)arg;
+    return p->createAnotherPlayer();
+}
+
+int MediaPlayerService::Client::createAnotherPlayer()
+{
+    ALOGI("[%s:%d] start create new player!", __FUNCTION__, __LINE__);
+    mThreadQuit = false;
+    sp<MediaPlayerBase> p;
+    status_t ret;
+    player_type new_type;
+    while (mSourceReady < 0) {
+        Mutex::Autolock l(mSourceMutex);
+        if (mExit) {
+            break;
+        }
+        mSourceCondition.wait(mSourceMutex);
+    }
+    if (mSourceReady <= 0 || mExit) {
+        goto QUIT;
+    }
+
+    new_type = AMSUPER_PLAYER;
+    p = MediaPlayerFactory::createPlayer(new_type, this, notify);
+    if (p.get() == NULL) {
+        notify(this, MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, -1, NULL);
+        goto QUIT;
+    }
+    {
+        Mutex::Autolock l(mLock);
+        mPlayer->reset();
+        mPlayer.clear();
+        mPlayer = NULL;
+    }
+    if (!p->hardwareOutput()) {
+        static_cast<MediaPlayerInterface*>(p.get())->setAudioSink(mAudioOutput);
+    }
+    ret = p->setDataSource(mHTTPService, mURI, &mHeaders);
+    mStatus = ret;
+    if (mRetransmitEndpointValid) {
+        mStatus = p->setRetransmitEndpoint(&mRetransmitEndpoint);
+    }
+    if (ret != OK) {
+        p->reset();
+        p.clear();
+        notify(this, MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, -1, NULL);
+        goto QUIT;
+    }
+    p->prepareAsync();
+    if (mSurfaceTexture != NULL) {
+        p->setVideoSurfaceTexture(mSurfaceTexture);
+    }
+    {
+        Mutex::Autolock l(mLock);
+        mPlayer = p;
+    }
+
+QUIT:
+    Mutex::Autolock l(mQuitMutex);
+    mThreadQuit = true;
+    mQuitCondition.signal();
+    ALOGI("[%s:%d] end create new player!", __FUNCTION__, __LINE__);
+    return 0;
+}
+
 
 
 bool MediaPlayerService::Client::shouldDropMetadata(media::Metadata::Type code) const
@@ -1753,7 +1876,7 @@ status_t MediaPlayerService::AudioOutput::open(
     mTrack = t;
 
     status_t res = NO_ERROR;
-    if ((flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0) {
+    if (((flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0)&& ((t->getFlags()& AUDIO_OUTPUT_FLAG_DIRECT) ==0 )) {
         res = t->setSampleRate(mPlaybackRatePermille * mSampleRateHz / 1000);
         if (res == NO_ERROR) {
             t->setAuxEffectSendLevel(mSendLevel);

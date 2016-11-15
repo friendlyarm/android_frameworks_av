@@ -48,6 +48,7 @@ enum {
     kKeyChannelCount      = '#chn',  // int32_t
     kKeyChannelMask       = 'chnm',  // int32_t
     kKeySampleRate        = 'srte',  // int32_t (audio sampling rate Hz)
+    kKeyBlockAlign        = 'bagn',
     kKeyFrameRate         = 'frmR',  // int32_t (video frame rate fps)
     kKeyBitRate           = 'brte',  // int32_t (bps)
     kKeyESDS              = 'esds',  // raw data
@@ -163,6 +164,11 @@ enum {
     kKeyCryptoIV          = 'cryI',  // uint8_t[16]
     kKeyCryptoMode        = 'cryM',  // int32_t
 
+    // audio profile
+    kKeyAudioProfile      = 'aprf',  // int32_t 
+    kKeyExtraData         = 'exda',
+    kKeyExtraDataSize     = 'edsz',
+    kKeyCodecID           = 'cdid',
     kKeyCryptoDefaultIVSize = 'cryS',  // int32_t
 
     kKeyPssh              = 'pssh',  // raw data
@@ -173,6 +179,12 @@ enum {
     kKeyTrackIsDefault    = 'dflt', // bool (int32_t)
     // Similar to MediaFormat.KEY_IS_FORCED_SUBTITLE but pertains to av tracks as well.
     kKeyTrackIsForced     = 'frcd', // bool (int32_t)
+    kKeyAudioFlag         ='aufg',  // audio info reported from decoder to indicate special info
+    kKeyDtsDecoderVer     ='dtsV',
+    kKeyDts958Fs          ='dtsF',
+    kKeyDts958PktSize     ='dtsP',
+    kKeyDts958PktType     ='dtsT',
+    kKeyDtsPcmSampsInFrmMaxFs='dtsS',
 };
 
 enum {
@@ -260,7 +272,7 @@ private:
             return mSize <= sizeof(u.reservoir);
         }
 
-        void allocateStorage(size_t size);
+        void *allocateStorage(size_t size);
         void freeStorage();
 
         void *storage() {

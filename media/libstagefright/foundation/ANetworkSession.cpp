@@ -84,6 +84,7 @@ struct ANetworkSession::Session : public RefBase {
     Session(int32_t sessionID,
             State state,
             int s,
+            bool isRTPSession,
             const sp<AMessage> &notify);
 
     int32_t sessionID() const;
@@ -121,7 +122,9 @@ private:
 
     int32_t mSessionID;
     State mState;
+    bool mIsNeedRTPConnect;
     Mode mMode;
+
     int mSocket;
     sp<AMessage> mNotify;
     bool mSawReceiveFailure, mSawSendFailure;
@@ -161,9 +164,11 @@ ANetworkSession::Session::Session(
         int32_t sessionID,
         State state,
         int s,
+        bool isRTPSession,
         const sp<AMessage> &notify)
     : mSessionID(sessionID),
       mState(state),
+      mIsNeedRTPConnect(isRTPSession),
       mMode(MODE_DATAGRAM),
       mSocket(s),
       mNotify(notify),
@@ -282,6 +287,21 @@ status_t ANetworkSession::Session::readMore() {
                         mSocket, buf->data(), buf->capacity(), 0,
                         (struct sockaddr *)&remoteAddr, &remoteAddrLen);
             } while (n < 0 && errno == EINTR);
+
+            if (mIsNeedRTPConnect) {
+                mIsNeedRTPConnect = false;
+                uint32_t connect_ip = ntohl(remoteAddr.sin_addr.s_addr);
+                sp<AMessage> notify = mNotify->dup();
+                notify->setInt32("reason", kWhatRTPConnect);
+                notify->setString("fromAddr", StringPrintf(
+                            "%u.%u.%u.%u",
+                            connect_ip >> 24,
+                            (connect_ip >> 16) & 0xff,
+                            (connect_ip >> 8) & 0xff,
+                            connect_ip & 0xff).c_str());
+                notify->setInt32("fromPort", ntohs(remoteAddr.sin_port));
+                notify->post();
+            }
 
             err = OK;
             if (n < 0) {
@@ -798,7 +818,8 @@ void ANetworkSession::Session::notify(NotificationReason reason) {
 ////////////////////////////////////////////////////////////////////////////////
 
 ANetworkSession::ANetworkSession()
-    : mNextSessionID(1) {
+    : mNextSessionID(1),
+      mIsRTPConnection(false){
     mPipeFd[0] = mPipeFd[1] = -1;
 }
 
@@ -957,6 +978,10 @@ status_t ANetworkSession::MakeSocketNonBlocking(int s) {
     }
 
     return OK;
+}
+
+void ANetworkSession::setRTPConnectionState(bool state){
+    mIsRTPConnection = state;
 }
 
 status_t ANetworkSession::createClientOrServer(
@@ -1136,11 +1161,21 @@ status_t ANetworkSession::createClientOrServer(
             break;
     }
 
-    session = new Session(
+    if (mIsRTPConnection) {
+        session = new Session(
             mNextSessionID++,
             state,
             s,
+            true,
             notify);
+    }else{
+        session = new Session(
+            mNextSessionID++,
+            state,
+            s,
+            false,
+            notify);
+    }
 
     if (mode == kModeCreateTCPDatagramSessionActive) {
         session->setMode(Session::MODE_DATAGRAM);
@@ -1366,6 +1401,7 @@ void ANetworkSession::threadLoop() {
                                         mNextSessionID++,
                                         Session::CONNECTED,
                                         clientSocket,
+                                        false,
                                         session->getNotificationMessage());
 
                             clientSession->setMode(

@@ -163,6 +163,13 @@ status_t TimedTextDriver::unselectTrack(size_t index) {
     return UNKNOWN_ERROR;
 }
 
+size_t TimedTextDriver::getSelectedTrack()
+{
+    Mutex::Autolock autoLock(mLock);
+    ALOGV("%s() is called", __FUNCTION__);
+    return mCurrentTrackIndex;
+}
+
 status_t TimedTextDriver::seekToAsync(int64_t timeUs) {
     Mutex::Autolock autoLock(mLock);
     ALOGV("%s() is called", __FUNCTION__);

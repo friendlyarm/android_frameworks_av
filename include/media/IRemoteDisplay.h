@@ -44,6 +44,7 @@ public:
 
     // Disconnects the remote display and stops listening for new connections.
     virtual status_t dispose() = 0;
+    virtual void setRotation(int32_t degree) = 0;
 };
 
 

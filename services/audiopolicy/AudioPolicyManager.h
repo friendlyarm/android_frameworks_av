@@ -706,7 +706,7 @@ protected:
         // must be called every time a condition that affects the device choice for a given output is
         // changed: connected device, phone state, force use, output start, output stop..
         // see getDeviceForStrategy() for the use of fromCache parameter
-        audio_devices_t getNewOutputDevice(audio_io_handle_t output, bool fromCache);
+        virtual audio_devices_t getNewOutputDevice(audio_io_handle_t output, bool fromCache);
 
         // updates cache of device used by all strategies (mDeviceForStrategy[])
         // must be called every time a condition that affects the device choice for a given strategy is

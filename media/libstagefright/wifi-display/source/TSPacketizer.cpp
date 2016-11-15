@@ -470,8 +470,7 @@ status_t TSPacketizer::packetize(
 
     const sp<Track> &track = mTracks.itemAt(trackIndex);
 
-    if (track->isH264() && (flags & PREPEND_SPS_PPS_TO_IDR_FRAMES)
-            && IsIDR(accessUnit)) {
+    if (track->isH264() && IsIDR(accessUnit)) {
         // prepend codec specific data, i.e. SPS and PPS.
         accessUnit = track->prependCSD(accessUnit);
     } else if (track->isAAC() && track->lacksADTSHeader()) {
@@ -845,7 +844,14 @@ status_t TSPacketizer::packetize(
         // reserved = b111111
         // program_clock_reference_extension = b?????????
 
-        int64_t nowUs = ALooper::GetNowUs();
+        //int64_t nowUs = ALooper::GetNowUs();
+
+        int64_t timeNow64;
+        struct timeval timeNow;
+        gettimeofday(&timeNow, NULL);
+        int64_t nowUs = (int64_t)timeNow.tv_sec*1000*1000 + (int64_t)timeNow.tv_usec;
+
+        //ALOGV("packetize          num:%lld latency:%lldms", timeUs, (nowUs - timeUs)/1000);
 
         uint64_t PCR = nowUs * 27;  // PCR based on a 27MHz clock
         uint64_t PCR_base = PCR / 300;

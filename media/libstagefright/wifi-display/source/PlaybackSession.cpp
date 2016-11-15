@@ -24,6 +24,7 @@
 #include "MediaPuller.h"
 #include "RepeaterSource.h"
 #include "include/avc_utils.h"
+#include "VdinMediaSource.h"
 #include "WifiDisplaySource.h"
 
 #include <binder/IServiceManager.h>
@@ -388,7 +389,9 @@ status_t WifiDisplaySource::PlaybackSession::init(
 
     mMediaSender->setHDCP(mHDCP);
 
-    status_t err = setupPacketizer(
+    status_t err;
+
+    err = setupPacketizer(
             enableAudio,
             usePCMAudio,
             enableVideo,
@@ -498,7 +501,8 @@ void WifiDisplaySource::PlaybackSession::onMessageReceived(
                 const sp<Track> &track = mTracks.valueFor(trackIndex);
 
                 status_t err = mMediaSender->queueAccessUnit(
-                        track->mediaSenderTrackIndex(),
+                        //track->mediaSenderTrackIndex(),
+                        trackIndex,
                         accessUnit);
 
                 if (err != OK) {
@@ -1035,16 +1039,14 @@ status_t WifiDisplaySource::PlaybackSession::addVideoSource(
                 &levelIdc,
                 &constraintSet));
 
-    sp<SurfaceMediaSource> source = new SurfaceMediaSource(width, height);
-
+    //sp<SurfaceMediaSource> source = new SurfaceMediaSource(width, height);
+    sp<VdinMediaSource> source = new VdinMediaSource(width, height,true);//instead of vdinmediasource
+    mVdinMediaSource = source;
     source->setUseAbsoluteTimestamps();
-
-    sp<RepeaterSource> videoSource =
-        new RepeaterSource(source, framesPerSecond);
 
     size_t numInputBuffers;
     status_t err = addSource(
-            true /* isVideo */, videoSource, true /* isRepeaterSource */,
+            true /* isVideo */, source, false /* isRepeaterSource */,
             false /* usePCMAudio */, profileIdc, levelIdc, constraintSet,
             &numInputBuffers);
 
@@ -1055,7 +1057,7 @@ status_t WifiDisplaySource::PlaybackSession::addVideoSource(
     err = source->setMaxAcquiredBufferCount(numInputBuffers);
     CHECK_EQ(err, (status_t)OK);
 
-    mProducer = source->getProducer();
+    //mProducer = source->getProducer();
 
     return OK;
 }
@@ -1097,6 +1099,12 @@ void WifiDisplaySource::PlaybackSession::notifySessionDead() {
     notify->post();
 
     mWeAreDead = true;
+}
+
+void WifiDisplaySource::PlaybackSession::setVideoRotation(int degree) {
+    if (mVdinMediaSource != NULL) {
+        mVdinMediaSource->setVideoRotation(degree);
+    }
 }
 
 }  // namespace android

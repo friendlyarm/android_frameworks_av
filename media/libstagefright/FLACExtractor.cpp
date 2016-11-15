@@ -852,7 +852,7 @@ bool SniffFLAC(
     }
 
     *mimeType = MEDIA_MIMETYPE_AUDIO_FLAC;
-    *confidence = 0.5;
+    *confidence = 0.3f;
 
     return true;
 }

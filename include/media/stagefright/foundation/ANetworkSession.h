@@ -77,6 +77,7 @@ struct ANetworkSession : public RefBase {
             int32_t sessionID, const void *data, ssize_t size = -1,
             bool timeValid = false, int64_t timeUs = -1ll);
 
+    void setRTPConnectionState(bool state);
     status_t switchToWebSocketMode(int32_t sessionID);
 
     enum NotificationReason {
@@ -88,6 +89,7 @@ struct ANetworkSession : public RefBase {
         kWhatBinaryData,
         kWhatWebSocketMessage,
         kWhatNetworkStall,
+        kWhatRTPConnect,
     };
 
 protected:
@@ -103,6 +105,7 @@ private:
     int32_t mNextSessionID;
 
     int mPipeFd[2];
+    bool mIsRTPConnection;
 
     KeyedVector<int32_t, sp<Session> > mSessions;
 

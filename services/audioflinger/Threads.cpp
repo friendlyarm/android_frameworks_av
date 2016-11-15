@@ -1831,6 +1831,10 @@ void AudioFlinger::PlaybackThread::readOutputParameters_l()
         LOG_FATAL("HAL format %#x not supported for mixed output",
                 mFormat);
     }
+    //TODO  2ch PCM direct output may used, get the correct format from audio hal
+    else if(mType == DIRECT && mChannelCount == 2){
+        mFormat  = AUDIO_FORMAT_DTS;
+    }
     mFrameSize = audio_stream_out_frame_size(mOutput->stream);
     mBufferSize = mOutput->stream->common.get_buffer_size(&mOutput->stream->common);
     mFrameCount = mBufferSize / mFrameSize;
@@ -2073,6 +2077,7 @@ void AudioFlinger::PlaybackThread::threadLoop_removeTracks(
         for (size_t i = 0 ; i < count ; i++) {
             const sp<Track>& track = tracksToRemove.itemAt(i);
             if (track->isExternalTrack()) {
+                ALOGVV("stop mId %d in threadLoop_removeTracks   \n",mId);
                 AudioSystem::stopOutput(mId, track->streamType(),
                                         (audio_session_t)track->sessionId());
 #ifdef ADD_BATTERY_DATA
@@ -2131,6 +2136,7 @@ ssize_t AudioFlinger::PlaybackThread::threadLoop_write()
             }
         }
         ssize_t framesWritten = mNormalSink->write((char *)mSinkBuffer + offset, count);
+        ALOGVV("write frame %d ,return %d \n",count,	framesWritten);
         ATRACE_END();
         if (framesWritten > 0) {
             bytesWritten = framesWritten * mFrameSize;
@@ -2161,6 +2167,7 @@ ssize_t AudioFlinger::PlaybackThread::threadLoop_write()
         // They are used e.g for multichannel PCM playback over HDMI.
         bytesWritten = mOutput->stream->write(mOutput->stream,
                                                    (char *)mSinkBuffer + offset, mBytesRemaining);
+        ALOGVV("write %d ,return %d ,mUseAsyncWrite %d \n",mBytesRemaining,	bytesWritten,mUseAsyncWrite);
         if (mUseAsyncWrite &&
                 ((bytesWritten < 0) || (bytesWritten == (ssize_t)mBytesRemaining))) {
             // do not wait for async callback in case of error of full write
@@ -2479,11 +2486,13 @@ bool AudioFlinger::PlaybackThread::threadLoop()
 
                 continue;
             }
+            ALOGVV("[%s %d],mActiveTracks.size() %d,mStandby %d,thread %p,type %d,mId %d",
+            __FUNCTION__,__LINE__,mActiveTracks.size(),mStandby,this,mType,mId);
             if ((!mActiveTracks.size() && systemTime() > standbyTime) ||
                                    isSuspended()) {
                 // put audio hardware into standby after short delay
                 if (shouldStandby_l()) {
-
+                    ALOGVV("[%s %d],type %d enter standy,thread %p",__FUNCTION__,__LINE__,mType,this );
                     threadLoop_standby();
 
                     mStandby = true;
@@ -3408,7 +3417,7 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::MixerThread::prepareTrac
         if ((framesReady >= minFrames) && track->isReady() &&
                 !track->isPaused() && !track->isTerminated())
         {
-            ALOGVV("track %d s=%08x [OK] on thread %p", name, cblk->mServer, this);
+            ALOGVV("track %d %p s=%08x [OK] on thread %p,type %d,mid %d,minFrames %d,ready %d,stop %d", name, track,cblk->mServer, this,mType,mId,minFrames,framesReady,track->isStopped());
 
             mixedTracks++;
 
@@ -3604,7 +3613,7 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::MixerThread::prepareTrac
                 chain->clearInputBuffer();
             }
 
-            ALOGVV("track %d s=%08x [NOT READY] on thread %p", name, cblk->mServer, this);
+            ALOGVV("track %d s=%08x [NOT READY] on thread %p,type %d,mid %d", name, cblk->mServer, this,mType,mId);
             if ((track->sharedBuffer() != 0) || track->isTerminated() ||
                     track->isStopped() || track->isPaused()) {
                 // We have consumed all the buffers of this track.
@@ -4054,18 +4063,19 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::DirectOutputThread::prep
         // app does not call stop() and relies on underrun to stop:
         // hence the test on (track->mRetryCount > 1).
         // If retryCount<=1 then track is about to underrun and be removed.
-        uint32_t minFrames;
+        uint32_t minFrames = mNormalFrameCount;
         if ((track->sharedBuffer() == 0) && !track->isStopping_1() && !track->isPausing()
             && (track->mRetryCount > 1)) {
             minFrames = mNormalFrameCount;
         } else {
-            minFrames = 1;
+         //   minFrames = 1;
         }
+            ALOGVV("12 track %d s=%08x [OK],min %d", track->name(), cblk->mServer,minFrames);
 
         if ((track->framesReady() >= minFrames) && track->isReady() && !track->isPaused() &&
                 !track->isStopping_2() && !track->isStopped())
         {
-            ALOGVV("track %d s=%08x [OK]", track->name(), cblk->mServer);
+            ALOGVV("track %d ,%p s=%08x [OK] mid %d,frames ready %d,minFrames %d", track->name(),track,cblk->mServer,mId,track->framesReady(),minFrames);
 
             if (track->mFillingUpStatus == Track::FS_FILLED) {
                 track->mFillingUpStatus = Track::FS_ACTIVE;
@@ -4097,6 +4107,8 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::DirectOutputThread::prep
             if (track->isStopping_1()) {
                 track->mState = TrackBase::STOPPING_2;
             }
+            ALOGVV("track %d s=%08x [NOT READY] mId %d", track->name(), cblk->mServer,mId);
+            ALOGVV("stop %d,paused %d, terminated %d \n",track->isStopped(),track->isPaused(),track->isTerminated());
             if ((track->sharedBuffer() != 0) || track->isStopped() ||
                     track->isStopping_2() || track->isPaused()) {
                 // We have consumed all the buffers of this track.
@@ -4107,9 +4119,13 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::DirectOutputThread::prep
                 } else {
                     audioHALFrames = 0;
                 }
-
+                bool raw_audio = audio_is_raw_data(mFormat);
+                bool need_remove = raw_audio&&(track->isTerminated()||track->isStopped());
                 size_t framesWritten = mBytesWritten / mFrameSize;
-                if (mStandby || !last ||
+                ALOGVV("raw audio %d,need remove %d \n",raw_audio,need_remove);
+                ALOGVV("mid %d  remove in ,mStandby %d, last %d ,present %d\n",
+                        mId,mStandby,last,track->presentationComplete(framesWritten, audioHALFrames));
+                if (mStandby || !last ||need_remove||
                         track->presentationComplete(framesWritten, audioHALFrames)) {
                     if (track->isStopping_2()) {
                         track->mState = TrackBase::STOPPED;
@@ -4864,10 +4880,13 @@ void AudioFlinger::DuplicatingThread::removeOutputTrack(MixerThread *thread)
             mOutputTracks[i]->destroy();
             mOutputTracks.removeAt(i);
             updateWaitTime_l();
+            if (thread->getOutput() == mOutput) {
+                mOutput = NULL;
+            }
             return;
         }
     }
-    ALOGV("removeOutputTrack(): unkonwn thread: %p", thread);
+    ALOGV("removeOutputTrack(): unknown thread: %p", thread);
 }
 
 // caller must hold mLock
@@ -4896,6 +4915,7 @@ bool AudioFlinger::DuplicatingThread::outputsReady(
                     outputTracks[i].get());
             return false;
         }
+        ALOGVV("[%s %d],outputTracks.size() %d,track %p thread %p",__FUNCTION__,__LINE__,outputTracks.size(),outputTracks[i].get(),thread.get());
         PlaybackThread *playbackThread = (PlaybackThread *)thread.get();
         // see note at standby() declaration
         if (playbackThread->standby() && !playbackThread->isSuspended()) {

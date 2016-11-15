@@ -47,6 +47,8 @@ struct WifiDisplaySource : public AHandler {
     status_t pause();
     status_t resume();
 
+    status_t setRotation(int degree);
+
 protected:
     virtual ~WifiDisplaySource();
     virtual void onMessageReceived(const sp<AMessage> &msg);
@@ -82,6 +84,7 @@ private:
         kWhatHDCPNotify,
         kWhatFinishStop2,
         kWhatTeardownTriggerTimedOut,
+        kWhatSetRotation,
     };
 
     struct ResponseID {

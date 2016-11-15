@@ -31,6 +31,7 @@ void SoundPoolThread::write(SoundPoolMsg msg) {
     // if thread is quitting, don't add to queue
     if (mRunning) {
         mMsgQueue.push(msg);
+        ALOGV("Write message m=%d, mData=%d", msg.mMessageType, msg.mData);
         mCondition.signal();
     }
 }
@@ -42,6 +43,7 @@ const SoundPoolMsg SoundPoolThread::read() {
     }
     SoundPoolMsg msg = mMsgQueue[0];
     mMsgQueue.removeAt(0);
+    ALOGV("read message m=%d, mData=%d", msg.mMessageType, msg.mData);
     mCondition.signal();
     return msg;
 }

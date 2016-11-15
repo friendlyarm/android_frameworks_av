@@ -5,6 +5,7 @@ ifeq ($(TARGET_DEVICE), manta)
     LOCAL_CFLAGS += -DSURFACE_IS_BGR32
 endif
 
+USE_AM_SOFT_DEMUXER_CODEC := true
 LOCAL_SRC_FILES:=                     \
         GraphicBufferSource.cpp       \
         OMX.cpp                       \
@@ -34,7 +35,9 @@ LOCAL_SHARED_LIBRARIES :=               \
         libdl
 
 LOCAL_MODULE:= libstagefright_omx
-
+ifeq ($(USE_AM_SOFT_DEMUXER_CODEC),true)
+LOCAL_CFLAGS += -DUSE_AM_SOFT_DEMUXER_CODEC
+endif
 include $(BUILD_SHARED_LIBRARY)
 
 ################################################################################

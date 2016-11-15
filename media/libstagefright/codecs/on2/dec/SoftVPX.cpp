@@ -58,8 +58,10 @@ SoftVPX::~SoftVPX() {
 
 static int GetCPUCoreCount() {
     int cpuCoreCount = 1;
-#if defined(_SC_NPROCESSORS_ONLN)
-    cpuCoreCount = sysconf(_SC_NPROCESSORS_ONLN);
+#if defined(_SC_NPROCESSORS_CONF)
+    cpuCoreCount = sysconf(_SC_NPROCESSORS_CONF);
+#elif defined(_SC_NPROCESSORS_ONLN)
+    cpuCoreCount = sysconf(_SC_NPROCESSORS_CONF);
 #else
     // _SC_NPROC_ONLN must be defined...
     cpuCoreCount = sysconf(_SC_NPROC_ONLN);
@@ -147,7 +149,7 @@ void SoftVPX::onQueueFilled(OMX_U32 /* portIndex */) {
             }
 
             outHeader->nOffset = 0;
-            outHeader->nFilledLen = (width * height * 3) / 2;
+            outHeader->nFilledLen = (outputBufferWidth() * outputBufferHeight() * 3) / 2;
             outHeader->nFlags = EOSseen ? OMX_BUFFERFLAG_EOS : 0;
             outHeader->nTimeStamp = inHeader->nTimeStamp;
 

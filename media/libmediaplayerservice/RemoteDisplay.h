@@ -39,6 +39,7 @@ struct RemoteDisplay : public BnRemoteDisplay {
     virtual status_t pause();
     virtual status_t resume();
     virtual status_t dispose();
+    virtual void setRotation(int degree);
 
 protected:
     virtual ~RemoteDisplay();

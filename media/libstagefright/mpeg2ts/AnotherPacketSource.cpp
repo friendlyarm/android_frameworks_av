@@ -43,7 +43,8 @@ AnotherPacketSource::AnotherPacketSource(const sp<MetaData> &meta)
       mEOSResult(OK),
       mLatestEnqueuedMeta(NULL),
       mLatestDequeuedMeta(NULL),
-      mQueuedDiscontinuityCount(0) {
+      mQueuedDiscontinuityCount(0),
+      mEstimatedBytePerSec(0) {
     setFormat(meta);
 }
 
@@ -215,6 +216,14 @@ void AnotherPacketSource::queueAccessUnit(const sp<ABuffer> &buffer) {
     int32_t discontinuity;
     if (buffer->meta()->findInt32("discontinuity", &discontinuity)) {
         ++mQueuedDiscontinuityCount;
+    } else {
+        if (!mEstimatedBytePerSec) {
+            status_t dummy;
+            getBufferedDurationUs_l(&dummy, &mEstimatedBytePerSec);
+            if (mEstimatedBytePerSec) {
+                ALOGI("[%s] estimate bytes by second : %lld !", mIsAudio ? "audio" : "video", mEstimatedBytePerSec);
+            }
+        }
     }
 
     if (mLatestEnqueuedMeta == NULL) {
@@ -287,7 +296,7 @@ void AnotherPacketSource::queueDiscontinuity(
 }
 
 void AnotherPacketSource::signalEOS(status_t result) {
-    CHECK(result != OK);
+    //CHECK(result != OK);
 
     Mutex::Autolock autoLock(mLock);
     mEOSResult = result;
@@ -309,7 +318,27 @@ int64_t AnotherPacketSource::getBufferedDurationUs(status_t *finalResult) {
     return getBufferedDurationUs_l(finalResult);
 }
 
-int64_t AnotherPacketSource::getBufferedDurationUs_l(status_t *finalResult) {
+int64_t AnotherPacketSource::getBufferedDataSize() {
+    Mutex::Autolock autoLock(mLock);
+    if (mBuffers.empty()) {
+        return 0;
+    }
+    int64_t data_size_bytes = 0;
+    List<sp<ABuffer> >::iterator it = mBuffers.begin();
+    while (it != mBuffers.end()) {
+        const sp<ABuffer> &buffer = *it;
+        data_size_bytes += buffer->size();
+        ++it;
+    }
+    return data_size_bytes;
+}
+
+int64_t AnotherPacketSource::getEstimatedBytesPerSec() {
+    Mutex::Autolock autoLock(mLock);
+    return mEstimatedBytePerSec;
+}
+
+int64_t AnotherPacketSource::getBufferedDurationUs_l(status_t *finalResult, int64_t *estimateBytePerSec) {
     *finalResult = mEOSResult;
 
     if (mBuffers.empty()) {
@@ -319,10 +348,13 @@ int64_t AnotherPacketSource::getBufferedDurationUs_l(status_t *finalResult) {
     int64_t time1 = -1;
     int64_t time2 = -1;
     int64_t durationUs = 0;
+    int64_t dataSize = 0;
 
     List<sp<ABuffer> >::iterator it = mBuffers.begin();
     while (it != mBuffers.end()) {
         const sp<ABuffer> &buffer = *it;
+
+        dataSize += buffer->size();
 
         int64_t timeUs;
         if (buffer->meta()->findInt64("timeUs", &timeUs)) {
@@ -342,7 +374,16 @@ int64_t AnotherPacketSource::getBufferedDurationUs_l(status_t *finalResult) {
         ++it;
     }
 
-    return durationUs + (time2 - time1);
+    int64_t result_dur = durationUs + (time2 - time1);
+    if (estimateBytePerSec) {
+        if (result_dur > 2000000) {
+            *estimateBytePerSec = dataSize / 2;
+        } else {
+            *estimateBytePerSec = 0;
+        }
+    }
+
+    return result_dur;
 }
 
 // A cheaper but less precise version of getBufferedDurationUs that we would like to use in

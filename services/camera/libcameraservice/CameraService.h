@@ -114,6 +114,8 @@ public:
     virtual status_t    supportsCameraApi(
             int cameraId, int apiVersion);
 
+    virtual void        usbCameraAttach(bool isAttach);
+
     // Extra permissions checks
     virtual status_t    onTransact(uint32_t code, const Parcel& data,
                                    Parcel* reply, uint32_t flags);

@@ -312,6 +312,14 @@ public:
         status_t res = data.readInt32();
         return res;
     }
+
+    // usb camera plug in or out
+    virtual void usbCameraAttach(bool isAttach){
+        Parcel data, reply;
+        data.writeInterfaceToken(ICameraService::getInterfaceDescriptor());
+        remote()->transact(BnCameraService::USB_CAMERA_ATTACH, data, &reply);
+        data.writeInt32(isAttach);
+    }
 };
 
 IMPLEMENT_META_INTERFACE(CameraService, "android.hardware.ICameraService");
@@ -488,6 +496,11 @@ status_t BnCameraService::onTransact(
             } else {
                 reply->writeInt32(0);
             }
+            return NO_ERROR;
+        } break;
+        case USB_CAMERA_ATTACH: {
+            CHECK_INTERFACE(ICameraService, data, reply);
+            usbCameraAttach(data.readInt32());
             return NO_ERROR;
         } break;
         default:

@@ -29,6 +29,15 @@
 #include "include/WVMExtractor.h"
 #include "include/FLACExtractor.h"
 #include "include/AACExtractor.h"
+#include "include/ADIFExtractor.h"
+#include "include/ADTSExtractor.h"
+#include "include/LATMExtractor.h"
+#include "include/AsfExtractor.h"
+#include "include/SStreamingExtractor.h"
+#include "include/DDPExtractor.h"
+#include "include/DtshdExtractor.h"
+#include "include/AIFFExtractor.h"
+#include "include/THDExtractor.h"
 
 #include "matroska/MatroskaExtractor.h"
 
@@ -39,6 +48,10 @@
 #include <media/stagefright/MetaData.h>
 #include <utils/String8.h>
 
+#ifdef USE_AM_SOFT_DEMUXER_CODEC
+#include <media/stagefright/AmMediaExtractorPlugin.h>
+#endif
+
 namespace android {
 
 sp<MetaData> MediaExtractor::getMetaData() {
@@ -48,6 +61,46 @@ sp<MetaData> MediaExtractor::getMetaData() {
 uint32_t MediaExtractor::flags() const {
     return CAN_SEEK_BACKWARD | CAN_SEEK_FORWARD | CAN_PAUSE | CAN_SEEK;
 }
+
+#ifdef USE_AM_SOFT_DEMUXER_CODEC
+//static
+sp<MediaExtractor> MediaExtractor::CreateEx(const sp<DataSource> &dataSource, bool isHEVC)
+{
+    float confidence = 0;
+    String8 mime("");
+    sp<AMessage> meta(NULL);
+    if (!dataSource->sniff(&mime, &confidence, &meta)) {
+        confidence = 0;
+    }
+
+    float am_confidence = 0;
+    String8 am_mime("");
+    sp<AMessage> am_meta(NULL);
+    if(!sniffAmExtFormat(dataSource, &am_mime, &am_confidence, &am_meta)) {
+        am_confidence = 0;
+    }
+ 
+    ALOGI("[%s %d]for WMA: force useing Amffmpeg extractor[am_confidence/%f confidence/%f ammine/%s mime/%s]\n",
+         __FUNCTION__,__LINE__,am_confidence,confidence,am_mime.string(),mime.string());
+    if(!strcmp(mime.string(),MEDIA_MIMETYPE_AUDIO_WMA)&& confidence>0 &&
+       !strcmp(am_mime.string(),MEDIA_MIMETYPE_CONTAINER_ASF)&&am_confidence>0)
+    {   //since amffpeg extractor is well performaced,why not use it,any quesion for this modification,contact me-->BUG#94436
+        confidence=0;
+    }
+
+    sp<MediaExtractor> extractor = NULL;
+    if(am_confidence > confidence || isHEVC) {     // if hevc/h.265, use ffmpeg extractor anyhow.
+        mime = am_mime;
+        extractor = createAmMediaExtractor(dataSource, mime.string());
+    }
+
+    if(NULL == extractor.get()) {
+        extractor = MediaExtractor::Create(dataSource, mime.string());
+    }
+
+    return extractor;
+}
+#endif
 
 // static
 sp<MediaExtractor> MediaExtractor::Create(
@@ -114,8 +167,24 @@ sp<MediaExtractor> MediaExtractor::Create(
         return new WVMExtractor(source);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC_ADTS)) {
         ret = new AACExtractor(source, meta);
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC_ADIF)) {
+        ret = new ADIFExtractor(source);
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AAC_LATM)) {
+        ret = new LATMExtractor(source);
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_ADTS_PROFILE)) {
+        ret = new ADTSExtractor(source);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_MPEG2PS)) {
         ret = new MPEG2PSExtractor(source);
+    } else if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA)||!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMAPRO)){
+        ret = new AsfExtractor(source);
+    }else if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_DTSHD)){
+        ret = new DtshdExtractor(source);
+    } else if(!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_AIFF)){
+        ret = new AIFFExtractor(source);
+    } else if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_TRUEHD)){
+        ret = new THDExtractor(source);
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_CONTAINER_DDP)) {
+        ret = new DDPExtractor(source);
     }
 
     if (ret != NULL) {

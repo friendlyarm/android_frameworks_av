@@ -419,6 +419,11 @@ private:
 
         status_t setAudioAttributes_l(const Parcel &request);
 
+        ///////////////////////// thread which to get correct player //////////////////////////
+        static int                              playerSwitchTread(void *);
+        int                                     createAnotherPlayer();
+        ///////////////////////////////////////////////////////////////////////////////////////
+
         mutable     Mutex                       mLock;
                     sp<MediaPlayerBase>         mPlayer;
                     sp<MediaPlayerService>      mService;
@@ -436,6 +441,19 @@ private:
                     struct sockaddr_in          mRetransmitEndpoint;
                     bool                        mRetransmitEndpointValid;
                     sp<Client>                  mNextClient;
+                    ////////// player switch ///////////////
+                    KeyedVector<String8, String8> mHeaders;
+                    sp<IMediaHTTPService>       mHTTPService;
+                    sp<IGraphicBufferProducer>  mSurfaceTexture;
+                    const char *                mURI;
+                    bool                        mExit;
+                    bool                        mThreadQuit;
+                    int32_t                     mSourceReady; // 0 : ready, normal quit; 1: error, create another player.
+                    Mutex                       mSourceMutex;
+                    Mutex                       mQuitMutex;
+                    Condition                   mSourceCondition;
+                    Condition                   mQuitCondition;
+                    ////////////////////////////////////////
 
         // Metadata filters.
         media::Metadata::Filter mMetadataAllow;  // protected by mLock

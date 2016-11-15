@@ -53,6 +53,7 @@ public:
         GET_LEGACY_PARAMETERS,
         SUPPORTS_CAMERA_API,
         CONNECT_LEGACY,
+        USB_CAMERA_ATTACH,
     };
 
     enum {
@@ -142,6 +143,8 @@ public:
             int clientUid,
             /*out*/
             sp<ICamera>& device) = 0;
+
+    virtual void usbCameraAttach(bool isAttach) = 0;
 };
 
 // ----------------------------------------------------------------------------

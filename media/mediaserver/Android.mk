@@ -31,6 +31,11 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_STATIC_LIBRARIES := \
 	libregistermsext
 
+ifeq ($(BUILD_WITH_VIEWRIGHT_STB), true)
+LOCAL_WHOLE_STATIC_LIBRARIES := libvmlogger
+LOCAL_SHARED_LIBRARIES += libvmdrm libvmclient
+endif
+
 LOCAL_C_INCLUDES := \
     frameworks/av/media/libmediaplayerservice \
     frameworks/av/services/medialog \

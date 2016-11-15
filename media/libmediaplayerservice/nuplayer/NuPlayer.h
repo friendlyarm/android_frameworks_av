@@ -127,6 +127,7 @@ private:
     sp<Source> mSource;
     uint32_t mSourceFlags;
     sp<NativeWindowWrapper> mNativeWindow;
+    sp<Surface> mNewSurface;
     sp<MediaPlayerBase::AudioSink> mAudioSink;
     sp<DecoderBase> mVideoDecoder;
     bool mOffloadAudio;

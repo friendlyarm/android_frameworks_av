@@ -88,7 +88,7 @@ AudioFlinger::ThreadBase::TrackBase::TrackBase(
                 audio_channel_count_from_out_mask(channelMask) :
                 audio_channel_count_from_in_mask(channelMask)),
         mFrameSize(audio_is_linear_pcm(format) ?
-                mChannelCount * audio_bytes_per_sample(format) : sizeof(int8_t)),
+                mChannelCount * audio_bytes_per_sample(format) :(audio_is_raw_data(format)?mChannelCount*sizeof(int16_t): sizeof(int8_t))),
         mFrameCount(frameCount),
         mSessionId(sessionId),
         mFlags(flags),

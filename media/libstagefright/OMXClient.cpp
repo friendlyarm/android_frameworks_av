@@ -228,6 +228,16 @@ status_t MuxOMX::allocateNode(
         return err;
     }
 
+    OMX_INDEXTYPE index;
+    pid_t CallingPid = getpid();
+    if (strcmp("OMX.amlogic.video.encoder.avc", name) == 0 ) {
+        if (omx->getExtensionIndex(*node,"OMX.amlogic.android.index.setClientPidInfo",&index) == OK) {
+            if (omx->setParameter(*node,index, &CallingPid, sizeof(pid_t)) != OK) {
+                ALOGV("This Component is not supported this settting");
+            }
+        }
+    }
+
     if (omx == mLocalOMX) {
         mIsLocalNode.add(*node, true);
     }

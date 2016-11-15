@@ -30,6 +30,7 @@
 #include <media/IAudioFlinger.h>
 #include <media/AudioPolicyHelper.h>
 #include <media/AudioResamplerPublic.h>
+#include "AmAudioTrack_reset_system_paras.h"
 
 #define WAIT_PERIOD_MS                  10
 #define WAIT_STREAM_END_TIMEOUT_SEC     120
@@ -199,8 +200,9 @@ AudioTrack::~AudioTrack()
         mCblkMemory.clear();
         mSharedBuffer.clear();
         IPCThreadState::self()->flushCommands();
-        ALOGV("~AudioTrack, releasing session id from %d on behalf of %d",
-                IPCThreadState::self()->getCallingPid(), mClientPid);
+        ALOGI("~AudioTrack, releasing session id from %d on behalf of %d mState/%d",
+                IPCThreadState::self()->getCallingPid(), mClientPid,mState);
+        AudioTrack_restore_system_samplerate(mFormat,mFlags,mSampleRate);
         AudioSystem::releaseAudioSessionId(mSessionId, mClientPid);
     }
 }
@@ -224,9 +226,9 @@ status_t AudioTrack::set(
         pid_t pid,
         const audio_attributes_t* pAttributes)
 {
-    ALOGV("set(): streamType %d, sampleRate %u, format %#x, channelMask %#x, frameCount %zu, "
+    ALOGI("set(): %p streamType %d, sampleRate %u, format %#x, channelMask %#x, frameCount %zu, "
           "flags #%x, notificationFrames %u, sessionId %d, transferType %d",
-          streamType, sampleRate, format, channelMask, frameCount, flags, notificationFrames,
+          this,streamType, sampleRate, format, channelMask, frameCount, flags, notificationFrames,
           sessionId, transferType);
 
     switch (transferType) {
@@ -343,7 +345,9 @@ status_t AudioTrack::set(
     if (flags & AUDIO_OUTPUT_FLAG_DIRECT) {
         if (audio_is_linear_pcm(format)) {
             mFrameSize = channelCount * audio_bytes_per_sample(format);
-        } else {
+        } else if(audio_is_raw_data(format)) {
+            mFrameSize = channelCount * sizeof(int16_t);
+        }else{
             mFrameSize = sizeof(uint8_t);
         }
         mFrameSizeAF = mFrameSize;
@@ -399,12 +403,11 @@ status_t AudioTrack::set(
     mAuxEffectId = 0;
     mFlags = flags;
     mCbf = cbf;
-
     if (cbf != NULL) {
         mAudioTrackThread = new AudioTrackThread(*this, threadCanCallJava);
         mAudioTrackThread->run("AudioTrack", ANDROID_PRIORITY_AUDIO, 0 /*stack*/);
     }
-
+    mFormat = AudioTrack_reset_system_samplerate(sampleRate,mFormat,channelMask,flags,&mSampleRate);
     // create the IAudioTrack
     status_t status = createTrack_l();
 
@@ -414,6 +417,7 @@ status_t AudioTrack::set(
             mAudioTrackThread->requestExitAndWait();
             mAudioTrackThread.clear();
         }
+        AudioTrack_restore_system_samplerate(mFormat,mFlags,mSampleRate);
         return status;
     }
 
@@ -518,7 +522,8 @@ void AudioTrack::stop()
     if (mState != STATE_ACTIVE && mState != STATE_PAUSED) {
         return;
     }
-
+    //??:is needed??
+    AudioTrack_restore_system_samplerate(mFormat,mFlags,mSampleRate);
     if (isOffloaded_l()) {
         mState = STATE_STOPPING;
     } else {
@@ -839,7 +844,7 @@ status_t AudioTrack::getPosition(uint32_t *position)
     }
 
     AutoMutex lock(mLock);
-    if (isOffloadedOrDirect_l()) {
+    if (isOffloaded_l()) {
         uint32_t dspFrames = 0;
 
         if (isOffloaded_l() && ((mState == STATE_PAUSED) || (mState == STATE_PAUSED_STOPPING))) {
@@ -1007,7 +1012,7 @@ status_t AudioTrack::createTrack_l()
     mNotificationFramesAct = mNotificationFramesReq;
 
     size_t frameCount = mReqFrameCount;
-    if (!audio_is_linear_pcm(mFormat)) {
+    if (!audio_is_linear_pcm(mFormat)&&!audio_is_raw_data(mFormat)) {
 
         if (mSharedBuffer != 0) {
             // Same comment as below about ignoring frameCount parameter for set()

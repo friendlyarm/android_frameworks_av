@@ -132,6 +132,7 @@ int main(int argc __unused, char** argv)
         SoundTriggerHwService::instantiate();
         registerExtensions();
         ProcessState::self()->startThreadPool();
+        IPCThreadState::self()->disableBackgroundScheduling(true);
         IPCThreadState::self()->joinThreadPool();
     }
 }

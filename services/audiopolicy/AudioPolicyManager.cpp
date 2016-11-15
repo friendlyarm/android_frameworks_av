@@ -47,7 +47,6 @@
 #include <soundtrigger/SoundTrigger.h>
 #include "AudioPolicyManager.h"
 #include "audio_policy_conf.h"
-
 namespace android {
 
 // ----------------------------------------------------------------------------
@@ -153,6 +152,8 @@ const StringToEnum sFormatNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_FORMAT_OPUS),
     STRING_TO_ENUM(AUDIO_FORMAT_AC3),
     STRING_TO_ENUM(AUDIO_FORMAT_E_AC3),
+    STRING_TO_ENUM(AUDIO_FORMAT_DTS),
+    STRING_TO_ENUM(AUDIO_FORMAT_TRUEHD),
 };
 
 const StringToEnum sOutChannelsNameToEnumTable[] = {
@@ -174,8 +175,18 @@ const StringToEnum sGainModeNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_GAIN_MODE_CHANNELS),
     STRING_TO_ENUM(AUDIO_GAIN_MODE_RAMP),
 };
+static int getprop_bool(const char * path)
+{
+    char buf[PROPERTY_VALUE_MAX];
+    int ret = -1;
 
-
+    ret = property_get(path, buf, NULL);
+    if (ret > 0) {
+        if (strcasecmp(buf,"true") == 0 || strcmp(buf,"1") == 0)
+            return 1;
+    }
+    return 0;
+}
 uint32_t AudioPolicyManager::stringToEnum(const struct StringToEnum *table,
                                               size_t size,
                                               const char *name)
@@ -224,7 +235,15 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(audio_devices_t device,
 {
     ALOGV("setDeviceConnectionState() device: %x, state %d, address %s",
             device, state, device_address != NULL ? device_address : "");
-
+   /*
+   for mbx ,not reponse for android hdmi hotplug message as need digital output all the time.also treat the spdif out as hdmi out.
+   */
+   if ((device&AUDIO_DEVICE_OUT_AUX_DIGITAL) && getprop_bool("ro.platform.has.mbxuimode")) {
+       return NO_ERROR;
+   }
+   if (device&AUDIO_DEVICE_OUT_SPDIF) {
+       device = AUDIO_DEVICE_OUT_AUX_DIGITAL;
+   }
     // connect/disconnect only 1 device at a time
     if (!audio_is_output_device(device) && !audio_is_input_device(device)) return BAD_VALUE;
 
@@ -859,6 +878,7 @@ sp<AudioPolicyManager::IOProfile> AudioPolicyManager::getProfileForDirectOutput(
                     NULL /*updatedSamplingRate*/, format, channelMask,
                     flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD ?
                         AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD : AUDIO_OUTPUT_FLAG_DIRECT);
+            ALOGVV("found %d,type %d,type %d\n",found,	mAvailableOutputDevices.types() ,profile->mSupportedDevices.types());
             if (found && (mAvailableOutputDevices.types() & profile->mSupportedDevices.types())) {
                 return profile;
             }
@@ -1067,7 +1087,16 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
 
     if (((flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0) ||
             !isNonOffloadableEffectEnabled()) {
-        profile = getProfileForDirectOutput(device,
+         ALOGVV("getProfileForDirectOutput() device %x,sr %d,format %x,chmask %x,flag %d\n",   device,
+                                           samplingRate,
+                                           format,
+                                           channelMask,
+                                           (audio_output_flags_t)flags);
+	 if ((device&AUDIO_DEVICE_OUT_AUX_DIGITAL) && getprop_bool("ro.platform.has.mbxuimode")) {
+    // for direct output,only use HDMI
+             device = AUDIO_DEVICE_OUT_AUX_DIGITAL;
+         }
+          profile = getProfileForDirectOutput(device,
                                            samplingRate,
                                            format,
                                            channelMask,
@@ -1082,9 +1111,15 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
             if (!desc->isDuplicated() && (profile == desc->mProfile)) {
                 outputDesc = desc;
                 // reuse direct output if currently open and configured with same parameters
-                if ((samplingRate == outputDesc->mSamplingRate) &&
+                // reuse direct output if currently open and configured with same parameters
+                if ( (!audio_is_linear_pcm(format)) &&   \
+                        (!audio_is_linear_pcm(outputDesc->mFormat))   \
+                        &&(channelMask == outputDesc->mChannelMask)) {
+/*
+if ((samplingRate == outputDesc->mSamplingRate) &&
                         (format == outputDesc->mFormat) &&
                         (channelMask == outputDesc->mChannelMask)) {
+*/
                     outputDesc->mDirectOpenCount++;
                     ALOGV("getOutput() reusing direct output %d", mOutputs.keyAt(i));
                     return mOutputs.keyAt(i);
@@ -1150,6 +1185,9 @@ audio_io_handle_t AudioPolicyManager::getOutputForDevice(
         mpClientInterface->onAudioPortListUpdate();
         return output;
     }
+    else{
+        ALOGVV("open direct output profile failed \n");
+    }
 
 non_direct_output:
 
@@ -1161,8 +1199,8 @@ non_direct_output:
     if (audio_is_linear_pcm(format)) {
         // get which output is suitable for the specified stream. The actual
         // routing change will happen when startOutput() will be called
+        device = device &(~AUDIO_DEVICE_OUT_AUX_DIGITAL);
         SortedVector<audio_io_handle_t> outputs = getOutputsForDevice(device, mOutputs);
-
         // at this stage we should ignore the DIRECT flag as no direct output could be found earlier
         flags = (audio_output_flags_t)(flags & ~AUDIO_OUTPUT_FLAG_DIRECT);
         output = selectOutput(outputs, flags, format);
@@ -3079,6 +3117,7 @@ AudioPolicyManager::AudioPolicyManager(AudioPolicyClientInterface *clientInterfa
 
     // open all output streams needed to access attached devices
     audio_devices_t outputDeviceTypes = mAvailableOutputDevices.types();
+    ALOGVV("	outputDeviceTypes  %x when AudioPolicyManager \n",outputDeviceTypes);
     audio_devices_t inputDeviceTypes = mAvailableInputDevices.types() & ~AUDIO_DEVICE_BIT_IN;
     for (size_t i = 0; i < mHwModules.size(); i++) {
         mHwModules[i]->mHandle = mpClientInterface->loadHwModule(mHwModules[i]->mName);
@@ -3145,8 +3184,7 @@ AudioPolicyManager::AudioPolicyManager(AudioPolicyClientInterface *clientInterfa
 
                 for (size_t k = 0; k  < outProfile->mSupportedDevices.size(); k++) {
                     audio_devices_t type = outProfile->mSupportedDevices[k]->mDeviceType;
-                    ssize_t index =
-                            mAvailableOutputDevices.indexOf(outProfile->mSupportedDevices[k]);
+                    ssize_t index = mAvailableOutputDevices.indexOf(outProfile->mSupportedDevices[k]);
                     // give a valid ID to an attached device once confirmed it is reachable
                     if ((index >= 0) && (mAvailableOutputDevices[index]->mId == 0)) {
                         mAvailableOutputDevices[index]->mId = nextUniqueId();
@@ -3253,9 +3291,10 @@ AudioPolicyManager::AudioPolicyManager(AudioPolicyClientInterface *clientInterfa
     }
 
     ALOGE_IF((mPrimaryOutput == 0), "Failed to open primary output");
-
     updateDevicesAndOutputs();
-
+    if (getprop_bool("ro.platform.has.mbxuimode")) {
+        setDeviceConnectionState(AUDIO_DEVICE_OUT_SPDIF,AUDIO_POLICY_DEVICE_STATE_AVAILABLE,"mbx-hdmi");
+    }
 #ifdef AUDIO_POLICY_TEST
     if (mPrimaryOutput != 0) {
         AudioParameter outputCmd = AudioParameter();
@@ -4117,8 +4156,8 @@ void AudioPolicyManager::checkOutputForStrategy(routing_strategy strategy)
     }
 
     if (!vectorsEqual(srcOutputs,dstOutputs)) {
-        ALOGV("checkOutputForStrategy() strategy %d, moving from output %d to output %d",
-              strategy, srcOutputs[0], dstOutputs[0]);
+     //   ALOGV("checkOutputForStrategy() strategy %d, moving from output %d to output %d",
+       //       strategy, srcOutputs[0], dstOutputs[0]);
         // mute strategy while moving tracks from one output to another
         for (size_t i = 0; i < srcOutputs.size(); i++) {
             sp<AudioOutputDescriptor> desc = mOutputs.valueFor(srcOutputs[i]);
@@ -4754,7 +4793,7 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
         if (device2 == AUDIO_DEVICE_NONE) {
             device2 = availableOutputDeviceTypes & AUDIO_DEVICE_OUT_DGTL_DOCK_HEADSET;
         }
-        if ((device2 == AUDIO_DEVICE_NONE) && (strategy != STRATEGY_SONIFICATION)) {
+        if ((device2 == AUDIO_DEVICE_NONE) && (strategy != STRATEGY_SONIFICATION) && (!getprop_bool("ro.platform.has.mbxuimode"))) {
             // no sonification on aux digital (e.g. HDMI)
             device2 = availableOutputDeviceTypes & AUDIO_DEVICE_OUT_AUX_DIGITAL;
         }
@@ -4771,8 +4810,9 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
             device3 = availableOutputDeviceTypes & AUDIO_DEVICE_OUT_HDMI_ARC;
             device3 |= (availableOutputDeviceTypes & AUDIO_DEVICE_OUT_SPDIF);
             device3 |= (availableOutputDeviceTypes & AUDIO_DEVICE_OUT_AUX_LINE);
+	    if (getprop_bool("ro.platform.has.mbxuimode"))
+                device3 |= (availableOutputDeviceTypes & AUDIO_DEVICE_OUT_AUX_DIGITAL);
         }
-
         device2 |= device3;
         // device is DEVICE_OUT_SPEAKER if we come from case STRATEGY_SONIFICATION or
         // STRATEGY_ENFORCED_AUDIBLE, AUDIO_DEVICE_NONE otherwise
@@ -4797,7 +4837,7 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
         break;
     }
 
-    ALOGVV("getDeviceForStrategy() strategy %d, device %x", strategy, device);
+    ALOGVV("getDeviceForStrategy() strategy %d, device %x, available %x", strategy, device, availableOutputDeviceTypes);
     return device;
 }
 
@@ -5246,7 +5286,13 @@ audio_devices_t AudioPolicyManager::getDeviceForInputSource(audio_source_t input
             break;
 
         case AUDIO_POLICY_FORCE_SPEAKER:
-            if (availableDeviceTypes & AUDIO_DEVICE_IN_BACK_MIC) {
+            /* for usb audio voice comminication app, USB need as first primary usb in device */
+            /* here ingore AUDIO_POLICY_FORCE_SPEAKER */
+            if (availableDeviceTypes & AUDIO_DEVICE_IN_USB_DEVICE) {
+                ALOGI("USB in audio,ingore AUDIO_POLICY_FORCE_SPEAKER\n");
+                device = AUDIO_DEVICE_IN_USB_DEVICE;
+            }
+            else if (availableDeviceTypes & AUDIO_DEVICE_IN_BACK_MIC) {
                 device = AUDIO_DEVICE_IN_BACK_MIC;
             } else if (availableDeviceTypes & AUDIO_DEVICE_IN_BUILTIN_MIC) {
                 device = AUDIO_DEVICE_IN_BUILTIN_MIC;
@@ -5269,7 +5315,10 @@ audio_devices_t AudioPolicyManager::getDeviceForInputSource(audio_source_t input
         }
         break;
     case AUDIO_SOURCE_CAMCORDER:
-        if (availableDeviceTypes & AUDIO_DEVICE_IN_BACK_MIC) {
+        if (availableDeviceTypes & AUDIO_DEVICE_IN_USB_DEVICE) {
+            device = AUDIO_DEVICE_IN_USB_DEVICE;
+        }
+        else if (availableDeviceTypes & AUDIO_DEVICE_IN_BACK_MIC) {
             device = AUDIO_DEVICE_IN_BACK_MIC;
         } else if (availableDeviceTypes & AUDIO_DEVICE_IN_BUILTIN_MIC) {
             device = AUDIO_DEVICE_IN_BUILTIN_MIC;
@@ -5295,7 +5344,7 @@ audio_devices_t AudioPolicyManager::getDeviceForInputSource(audio_source_t input
         ALOGW("getDeviceForInputSource() invalid input source %d", inputSource);
         break;
     }
-    ALOGV("getDeviceForInputSource()input source %d, device %08x", inputSource, device);
+    ALOGV("getDeviceForInputSource()input source %d, device %08x,availableDeviceTypes %x", inputSource, device,availableDeviceTypes);
     return device;
 }
 
@@ -7379,7 +7428,6 @@ bool AudioPolicyManager::IOProfile::isCompatibleProfile(audio_devices_t device,
     const bool isPlaybackThread = mType == AUDIO_PORT_TYPE_MIX && mRole == AUDIO_PORT_ROLE_SOURCE;
     const bool isRecordThread = mType == AUDIO_PORT_TYPE_MIX && mRole == AUDIO_PORT_ROLE_SINK;
     ALOG_ASSERT(isPlaybackThread != isRecordThread);
-
     if (device != AUDIO_DEVICE_NONE && mSupportedDevices.getDevice(device, address) == 0) {
         return false;
     }
@@ -7397,7 +7445,7 @@ bool AudioPolicyManager::IOProfile::isCompatibleProfile(audio_devices_t device,
     }
 
     if (!audio_is_valid_format(format) || checkFormat(format) != NO_ERROR) {
-        return false;
+         return false;
     }
 
     if (isPlaybackThread && (!audio_is_output_channel(channelMask) ||
@@ -7406,7 +7454,7 @@ bool AudioPolicyManager::IOProfile::isCompatibleProfile(audio_devices_t device,
     }
     if (isRecordThread && (!audio_is_input_channel(channelMask) ||
             checkCompatibleChannelMask(channelMask) != NO_ERROR)) {
-        return false;
+            return false;
     }
 
     if (isPlaybackThread && (mFlags & flags) != flags) {

@@ -25,6 +25,7 @@ enum {
     DISPOSE = IBinder::FIRST_CALL_TRANSACTION,
     PAUSE,
     RESUME,
+    SETROTATION,
 };
 
 class BpRemoteDisplay: public BpInterface<IRemoteDisplay>
@@ -49,12 +50,18 @@ public:
         return reply.readInt32();
     }
 
-    status_t dispose()
-    {
+    status_t dispose() {
         Parcel data, reply;
         data.writeInterfaceToken(IRemoteDisplay::getInterfaceDescriptor());
         remote()->transact(DISPOSE, data, &reply);
         return reply.readInt32();
+    }
+
+    void setRotation (int32_t degree) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IRemoteDisplay::getInterfaceDescriptor());
+        data.writeInt32(degree);
+        remote()->transact(SETROTATION, data, &reply);
     }
 };
 
@@ -84,6 +91,13 @@ status_t BnRemoteDisplay::onTransact(
             CHECK_INTERFACE(IRemoteDisplay, data, reply);
             reply->writeInt32(resume());
             return OK;
+        }
+        case SETROTATION:
+        {
+            CHECK_INTERFACE(IRemoteDisplay, data, reply);
+            int32_t degree = data.readInt32();
+            setRotation(degree);
+            return NO_ERROR;
         }
 
         default:

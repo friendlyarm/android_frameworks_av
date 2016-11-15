@@ -60,7 +60,8 @@ LOCAL_SRC_FILES:= \
     SoundPool.cpp \
     SoundPoolThread.cpp \
     StringArray.cpp \
-    AudioPolicy.cpp
+    AudioPolicy.cpp \
+    AmAudioTrack_reset_system_paras.cpp
 
 LOCAL_SRC_FILES += ../libnbaio/roundup.c
 

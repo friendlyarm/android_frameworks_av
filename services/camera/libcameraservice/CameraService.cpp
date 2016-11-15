@@ -1141,6 +1141,20 @@ status_t CameraService::supportsCameraApi(int cameraId, int apiVersion) {
     return OK;
 }
 
+void CameraService::usbCameraAttach(bool isAttach){
+    mNumberOfCameras = mModule->get_number_of_cameras();
+    if (mNumberOfCameras > MAX_CAMERAS) {
+        ALOGE("Number of cameras(%d) > MAX_CAMERAS(%d)", mNumberOfCameras, MAX_CAMERAS);
+
+        mNumberOfCameras = MAX_CAMERAS;
+    }
+    for (int i = 0; i < mNumberOfCameras; i++) {
+        setCameraFree(i);
+    }
+
+    ALOGI("USB camera attach isAttach:%d, number:%d", isAttach, mNumberOfCameras);
+}
+
 void CameraService::removeClientByRemote(const wp<IBinder>& remoteBinder) {
     int callingPid = getCallingPid();
     LOG1("CameraService::removeClientByRemote E (pid %d)", callingPid);

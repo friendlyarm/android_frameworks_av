@@ -170,17 +170,30 @@ status_t Converter::initEncoder() {
     } else {
         mOutputFormat->setInt32("bitrate", videoBitrate);
         mOutputFormat->setInt32("bitrate-mode", OMX_Video_ControlRateConstant);
-        mOutputFormat->setInt32("frame-rate", 30);
+
         mOutputFormat->setInt32("i-frame-interval", 15);  // Iframes every 15 secs
 
+        int videoframerate = 30;
+        char val[PROPERTY_VALUE_MAX];
+        if (property_get("media.wfd.videoframerate", val, NULL)) {
+            sscanf(val,"%d",&videoframerate);
+            mOutputFormat->setInt32("frame-rate", videoframerate);
+        } else {
+            mOutputFormat->setInt32("frame-rate", videoframerate);
+        }
+
+        ALOGV("video frame rate set to :%d", videoframerate);
+
         // Configure encoder to use intra macroblock refresh mode
-        mOutputFormat->setInt32("intra-refresh-mode", OMX_VIDEO_IntraRefreshCyclic);
+        //mOutputFormat->setInt32("intra-refresh-mode", OMX_VIDEO_IntraRefreshCyclic);//hw encoder don`t support
 
         int width, height, mbs;
         if (!mOutputFormat->findInt32("width", &width)
                 || !mOutputFormat->findInt32("height", &height)) {
             return ERROR_UNSUPPORTED;
         }
+
+        ALOGV("video width:%d height:%d", width, height);
 
         // Update macroblocks in a cyclic fashion with 10% of all MBs within
         // frame gets updated at one time. It takes about 10 frames to
@@ -199,7 +212,7 @@ status_t Converter::initEncoder() {
 
     if (!isAudio) {
         sp<AMessage> tmp = mOutputFormat->dup();
-        tmp->setInt32("prepend-sps-pps-to-idr-frames", 1);
+        tmp->setInt32("prepend-sps-pps-to-idr-frames", 0);//dont use this function, tspacketizer will add spspps header manually
 
         err = mEncoder->configure(
                 tmp,
@@ -747,8 +760,8 @@ status_t Converter::doMoreWork() {
 
             buffer->meta()->setInt64("timeUs", timeUs);
 
-            ALOGV("[%s] time %lld us (%.2f secs)",
-                  mIsVideo ? "video" : "audio", timeUs, timeUs / 1E6);
+            //ALOGV("[%s] time %lld us (%.2f secs) flags:%x size:%d",
+                  //mIsVideo ? "video" : "audio", timeUs, timeUs / 1E6, flags, size);
 
             memcpy(buffer->data(), outbuf->base() + offset, size);
 

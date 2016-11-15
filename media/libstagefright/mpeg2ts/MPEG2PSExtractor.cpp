@@ -546,6 +546,9 @@ MPEG2PSExtractor::Track::Track(
         case ATSParser::STREAMTYPE_H264:
             mode = ElementaryStreamQueue::H264;
             break;
+        case ATSParser::STREAMTYPE_H265:
+            mode = ElementaryStreamQueue::H265;
+            break;
         case ATSParser::STREAMTYPE_MPEG2_AUDIO_ADTS:
             mode = ElementaryStreamQueue::AAC;
             break;
@@ -553,6 +556,15 @@ MPEG2PSExtractor::Track::Track(
         case ATSParser::STREAMTYPE_MPEG2_AUDIO:
             mode = ElementaryStreamQueue::MPEG_AUDIO;
             break;
+
+#if defined(DOLBY_UDC) && defined(DOLBY_UDC_STREAMING_HLS)
+        case ATSParser::STREAMTYPE_DDP_AC3_AUDIO:
+            mode = ElementaryStreamQueue::DDP_AC3_AUDIO;
+            break;
+        case ATSParser::STREAMTYPE_DDP_EC3_AUDIO:
+            mode = ElementaryStreamQueue::DDP_EC3_AUDIO;
+            break;
+#endif // DOLBY_UDC && DOLBY_UDC_STREAMING_HLS
 
         case ATSParser::STREAMTYPE_MPEG1_VIDEO:
         case ATSParser::STREAMTYPE_MPEG2_VIDEO:

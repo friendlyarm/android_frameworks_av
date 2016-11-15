@@ -27,6 +27,8 @@
 #include <OMX_Component.h>
 #include <OMX_IndexExt.h>
 #include <OMX_AsString.h>
+#include <OMX_VideoExt.h>
+
 
 #include <binder/IMemory.h>
 #include <gui/BufferQueue.h>
@@ -227,6 +229,8 @@ static status_t StatusFromOMXError(OMX_ERRORTYPE err) {
         case OMX_ErrorUnsupportedSetting:
         case OMX_ErrorUnsupportedIndex:
             return ERROR_UNSUPPORTED;
+        case OMX_ErrorNoMore:
+            return OMX_ErrorNoMore;
         default:
             return UNKNOWN_ERROR;
     }
@@ -980,6 +984,12 @@ status_t OMXNodeInstance::emptyBuffer(
     Mutex::Autolock autoLock(mLock);
 
     OMX_BUFFERHEADERTYPE *header = findBufferHeader(buffer);
+    // rangeLength and rangeOffset must be a subset of the allocated data in the buffer.
+    // corner case: we permit rangeOffset == end-of-buffer with rangeLength == 0.
+    if (rangeOffset > header->nAllocLen
+            || rangeLength > header->nAllocLen - rangeOffset) {
+        return BAD_VALUE;
+    }
     header->nFilledLen = rangeLength;
     header->nOffset = rangeOffset;
 
@@ -1219,6 +1229,25 @@ void OMXNodeInstance::onObserverDied(OMXMaster *master) {
     ALOGE("!!! Observer died. Quickly, do something, ... anything...");
 
     // Try to force shutdown of the node and hope for the best.
+    // add by amlogic
+    OMX_INDEXTYPE index;
+    OMX_STRING name = const_cast<OMX_STRING>(
+            "OMX.amlogic.index.forceShutdown");
+
+    OMX_ERRORTYPE err = OMX_GetExtensionIndex(mHandle, name, &index);
+    if (err != OMX_ErrorNone) {
+        CLOG_ERROR(etExtensionIndex, err, "%s", name);
+    }
+
+    OMX_VIDEO_FORCESHUTDOWMCOMPONENT params;
+    InitOMXParams(&params);
+    params.isForceShutdowm = OMX_TRUE;
+
+    err = OMX_SetParameter(mHandle, index, &params);
+    if (err != OMX_ErrorNone) {
+        CLOG_ERROR(setParameter, err, "%s(%#x)", name, index);
+    }
+
     freeNode(master);
 }
 

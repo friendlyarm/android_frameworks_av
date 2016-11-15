@@ -62,6 +62,8 @@ public:
     void getExternalTrackInfo(Parcel *parcel);
     size_t countExternalTracks() const;
 
+    size_t getSelectedTrack();
+
 private:
     Mutex mLock;
 

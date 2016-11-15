@@ -138,6 +138,12 @@ private:
     void onChangeState(OMX_STATETYPE state);
     void onPortEnable(OMX_U32 portIndex, bool enable);
     void onPortFlush(OMX_U32 portIndex, bool sendFlushComplete);
+    OMX_ERRORTYPE useBuffer_l(
+            OMX_BUFFERHEADERTYPE **buffer,
+            OMX_U32 portIndex,
+            OMX_PTR appPrivate,
+            OMX_U32 size,
+            OMX_U8 *ptr);
 
     void checkTransitions();
 

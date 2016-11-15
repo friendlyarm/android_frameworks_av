@@ -50,6 +50,10 @@
 
 #include "include/avc_utils.h"
 
+#ifdef USE_AM_SOFT_DEMUXER_CODEC
+#include <media/stagefright/AmMediaDefsExt.h>
+#endif
+
 namespace android {
 
 // OMX errors are directly mapped into status_t range if
@@ -202,7 +206,9 @@ private:
             IOMX::buffer_id bufferID,
             size_t rangeOffset, size_t rangeLength,
             OMX_U32 flags,
-            int64_t timeUs);
+            int64_t timeUs,
+            void *platformPrivate,
+            void *dataPtr);
 
     void getMoreInputDataIfPossible();
 
@@ -407,6 +413,7 @@ ACodec::ACodec()
       mSentFormat(false),
       mIsEncoder(false),
       mUseMetadataOnEncoderOutput(false),
+      mFatalError(false),
       mShutdownInProgress(false),
       mExplicitShutdown(false),
       mEncoderDelay(0),
@@ -552,7 +559,9 @@ status_t ACodec::allocateBuffersOnPort(OMX_U32 portIndex) {
 
             for (OMX_U32 i = 0; i < def.nBufferCountActual; ++i) {
                 sp<IMemory> mem = mDealer[portIndex]->allocate(def.nBufferSize);
-                CHECK(mem.get() != NULL);
+                if (mem == NULL || mem->pointer() == NULL) {
+                    return NO_MEMORY;
+                }
 
                 BufferInfo info;
                 info.mStatus = BufferInfo::OWNED_BY_US;
@@ -628,16 +637,19 @@ status_t ACodec::configureOutputBuffersFromNativeWindow(
         return err;
     }
 
-    err = native_window_set_buffers_geometry(
+    if (!strcmp(mComponentName.c_str(), "OMX.google.h265.decoder")
+	&& def.format.video.eColorFormat == OMX_AML_COLOR_FormatYV12) {
+        err = native_window_set_buffers_geometry(
+            mNativeWindow.get(),
+            def.format.video.nFrameWidth,
+            def.format.video.nFrameHeight,
+            HAL_PIXEL_FORMAT_YV12);
+    } else {
+        err = native_window_set_buffers_geometry(
             mNativeWindow.get(),
             def.format.video.nFrameWidth,
             def.format.video.nFrameHeight,
             def.format.video.eColorFormat);
-
-    if (err != 0) {
-        ALOGE("native_window_set_buffers_geometry failed: %s (%d)",
-                strerror(-err), -err);
-        return err;
     }
 
     if (mRotationDegrees != 0) {
@@ -663,11 +675,15 @@ status_t ACodec::configureOutputBuffersFromNativeWindow(
 
     // Set up the native window.
     OMX_U32 usage = 0;
-    err = mOMX->getGraphicBufferUsage(mNode, kPortIndexOutput, &usage);
-    if (err != 0) {
-        ALOGW("querying usage flags from OMX IL component failed: %d", err);
-        // XXX: Currently this error is logged, but not fatal.
-        usage = 0;
+    if (!strcmp(mComponentName.c_str(), "OMX.google.h265.decoder")) {
+        usage |= GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN;
+    } else {
+        err = mOMX->getGraphicBufferUsage(mNode, kPortIndexOutput, &usage);
+        if (err != 0) {
+            ALOGW("querying usage flags from OMX IL component failed: %d", err);
+            // XXX: Currently this error is logged, but not fatal.
+            usage = 0;
+        }
     }
     int omxUsage = usage;
 
@@ -734,6 +750,10 @@ status_t ACodec::configureOutputBuffersFromNativeWindow(
     err = mNativeWindow->query(
             mNativeWindow.get(), NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS,
             (int *)minUndequeuedBuffers);
+    if (mLowLatencyMode) {     //set BufferQueue async mode
+        //*minUndequeuedBuffers += 1;
+        mNativeWindow->setSwapInterval(mNativeWindow.get(),0);
+    }
 
     if (err != 0) {
         ALOGE("NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS query failed: %s (%d)",
@@ -879,7 +899,9 @@ status_t ACodec::allocateOutputMetaDataBuffers() {
 
         sp<IMemory> mem = mDealer[kPortIndexOutput]->allocate(
                 sizeof(struct VideoDecoderOutputMetaData));
-        CHECK(mem.get() != NULL);
+        if (mem == NULL || mem->pointer() == NULL) {
+            return NO_MEMORY;
+        }
         info.mData = new ABuffer(mem->pointer(), mem->size());
 
         // we use useBuffer for metadata regardless of quirks
@@ -941,6 +963,11 @@ ACodec::BufferInfo *ACodec::dequeueBufferFromNativeWindow() {
     if (mTunneled) {
         ALOGW("dequeueBufferFromNativeWindow() should not be called in tunnel"
               " video playback mode mode!");
+        return NULL;
+    }
+
+    if (mFatalError) {
+        ALOGW("not dequeuing from native window due to fatal error");
         return NULL;
     }
 
@@ -1105,6 +1132,16 @@ status_t ACodec::setComponentRole(
             "video_decoder.mpeg4", "video_encoder.mpeg4" },
         { MEDIA_MIMETYPE_VIDEO_H263,
             "video_decoder.h263", "video_encoder.h263" },
+        { MEDIA_MIMETYPE_VIDEO_MPEG2,
+            "video_decoder.mpeg2", "video_encoder.mpeg2" },
+        { MEDIA_MIMETYPE_VIDEO_WMV3,
+            "video_decoder.wmv3", "video_encoder.wmv3" },
+        { MEDIA_MIMETYPE_VIDEO_VC1,
+            "video_decoder.vc1", "video_encoder.vc1" },
+        { MEDIA_MIMETYPE_VIDEO_WVC1,
+            "video_decoder.vc1", "video_encoder.vc1" },
+        { MEDIA_MIMETYPE_VIDEO_MJPEG,
+            "video_decoder.mjpeg", "video_encoder.mjpeg" },
         { MEDIA_MIMETYPE_VIDEO_VP8,
             "video_decoder.vp8", "video_encoder.vp8" },
         { MEDIA_MIMETYPE_VIDEO_VP9,
@@ -1121,6 +1158,22 @@ status_t ACodec::setComponentRole(
             "audio_decoder.ac3", "audio_encoder.ac3" },
         { MEDIA_MIMETYPE_AUDIO_EAC3,
             "audio_decoder.eac3", "audio_encoder.eac3" },
+
+        { MEDIA_MIMETYPE_VIDEO_RM,
+            "video_decoder.rm", "video_encoder.rm"},
+
+#ifdef USE_AM_SOFT_DEMUXER_CODEC
+        { MEDIA_MIMETYPE_VIDEO_VP6,
+            "video_decoder.amvp6", "video_encoder.amvp6" },
+        { MEDIA_MIMETYPE_VIDEO_VP6A,
+            "video_decoder.amvp6a", "video_encoder.amvp6a" },
+        { MEDIA_MIMETYPE_VIDEO_VP6F,
+            "video_decoder.amvp6f", "video_encoder.amvp6f" },
+        { MEDIA_MIMETYPE_VIDEO_HEVC,
+            "video_decoder.amh265", "video_encoder.amh265" },
+        { MEDIA_MIMETYPE_VIDEO_RM,
+            "video_decoder.rm", "video_encoder.rm"}, 
+#endif
     };
 
     static const size_t kNumMimeToRole =
@@ -1181,6 +1234,29 @@ status_t ACodec::configureCodec(
 
     if (err != OK) {
         return err;
+    }
+
+    bool low_latency_mode = false;
+    int32_t low_latency_mode_l = 0;
+    if (msg->findInt32("low-latency", &low_latency_mode_l)) {
+        low_latency_mode = (bool) low_latency_mode_l;
+    }
+    if (low_latency_mode || (mFlags & kFlagLowLatencyMode)) {
+        low_latency_mode = true;
+        mOMX->setParameter(
+                mNode,
+                static_cast<OMX_INDEXTYPE>(OMX_IndexParamLowLatencyMode),
+                &low_latency_mode,
+                sizeof(low_latency_mode));
+    }
+    mLowLatencyMode = low_latency_mode;
+
+    int32_t Is4k_osd = 0;
+    if (msg->findInt32("4k-osd", &Is4k_osd)) {
+        OMX_BOOL enable = (OMX_BOOL)Is4k_osd;
+        err = mOMX->setParameter(
+            mNode, static_cast<OMX_INDEXTYPE>(OMX_IndexParam4kosd),
+                &enable, sizeof(enable));
     }
 
     int32_t bitRate = 0;
@@ -1507,7 +1583,8 @@ status_t ACodec::configureCodec(
         if (usingSwRenderer) {
             outputFormat->setInt32("using-sw-renderer", 1);
         }
-    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)
+        || !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG_LAYER_II)) {
         int32_t numChannels, sampleRate;
         if (!msg->findInt32("channel-count", &numChannels)
                 || !msg->findInt32("sample-rate", &sampleRate)) {
@@ -2290,8 +2367,20 @@ static const struct VideoCodingMapEntry {
     { MEDIA_MIMETYPE_VIDEO_MPEG4, OMX_VIDEO_CodingMPEG4 },
     { MEDIA_MIMETYPE_VIDEO_H263, OMX_VIDEO_CodingH263 },
     { MEDIA_MIMETYPE_VIDEO_MPEG2, OMX_VIDEO_CodingMPEG2 },
+    { MEDIA_MIMETYPE_VIDEO_VC1, static_cast<OMX_VIDEO_CODINGTYPE>(OMX_VIDEO_CodingVC1) },
+    { MEDIA_MIMETYPE_VIDEO_WVC1, static_cast<OMX_VIDEO_CODINGTYPE>(OMX_VIDEO_CodingVC1) },
+    { MEDIA_MIMETYPE_VIDEO_MJPEG, static_cast<OMX_VIDEO_CODINGTYPE>(OMX_VIDEO_CodingMJPEG) },
+    { MEDIA_MIMETYPE_VIDEO_WMV3, static_cast<OMX_VIDEO_CODINGTYPE>(OMX_VIDEO_CodingWMV3) },
     { MEDIA_MIMETYPE_VIDEO_VP8, OMX_VIDEO_CodingVP8 },
     { MEDIA_MIMETYPE_VIDEO_VP9, OMX_VIDEO_CodingVP9 },
+    { MEDIA_MIMETYPE_VIDEO_HEVC, OMX_VIDEO_CodingHEVC },
+    { MEDIA_MIMETYPE_VIDEO_RM, OMX_VIDEO_CodingRV},
+#ifdef USE_AM_SOFT_DEMUXER_CODEC
+    { MEDIA_MIMETYPE_VIDEO_VP6, OMX_VIDEO_CodingVPX },
+    { MEDIA_MIMETYPE_VIDEO_VP6F, OMX_VIDEO_CodingVPX },
+    { MEDIA_MIMETYPE_VIDEO_VP6A, OMX_VIDEO_CodingVPX },
+#endif
+
 };
 
 static status_t GetVideoCodingTypeFromMime(
@@ -3888,6 +3977,9 @@ void ACodec::signalError(OMX_ERRORTYPE error, status_t internalError) {
             ALOGW("Invalid OMX error %#x", error);
         }
     }
+
+    mFatalError = true;
+
     notify->setInt32("err", internalError);
     notify->setInt32("actionCode", ACTION_CODE_FATAL); // could translate from OMX error.
     notify->post();
@@ -4203,17 +4295,25 @@ bool ACodec::BaseState::onOMXMessage(const sp<AMessage> &msg) {
 
             int32_t rangeOffset, rangeLength, flags;
             int64_t timeUs;
+            void *platformPrivate;
+            void *dataPtr;
 
             CHECK(msg->findInt32("range_offset", &rangeOffset));
             CHECK(msg->findInt32("range_length", &rangeLength));
             CHECK(msg->findInt32("flags", &flags));
             CHECK(msg->findInt64("timestamp", &timeUs));
+            //CHECK(msg->findPointer("platform_private", (void **)&platformPrivate));
+            //CHECK(msg->findPointer("data_ptr", (void **)&dataPtr));
+            platformPrivate = NULL;
+            dataPtr = NULL;
 
             return onOMXFillBufferDone(
                     bufferID,
                     (size_t)rangeOffset, (size_t)rangeLength,
                     (OMX_U32)flags,
-                    timeUs);
+                    timeUs,
+                    platformPrivate,
+                    dataPtr);
         }
 
         default:
@@ -4254,11 +4354,23 @@ bool ACodec::BaseState::onOMXEmptyBufferDone(IOMX::buffer_id bufferID) {
     CHECK_EQ((int)info->mStatus, (int)BufferInfo::OWNED_BY_COMPONENT);
     info->mStatus = BufferInfo::OWNED_BY_US;
 
-    // We're in "store-metadata-in-buffers" mode, the underlying
-    // OMX component had access to data that's implicitly refcounted
-    // by this "MediaBuffer" object. Now that the OMX component has
-    // told us that it's done with the input buffer, we can decrement
-    // the mediaBuffer's reference count.
+    const sp<AMessage> &bufferMeta = info->mData->meta();
+    void *mediaBuffer;
+    if (bufferMeta->findPointer("mediaBuffer", &mediaBuffer)
+            && mediaBuffer != NULL) {
+        // We're in "store-metadata-in-buffers" mode, the underlying
+        // OMX component had access to data that's implicitly refcounted
+        // by this "mediaBuffer" object. Now that the OMX component has
+        // told us that it's done with the input buffer, we can decrement
+        // the mediaBuffer's reference count.
+
+        ALOGV("releasing mbuf %p", mediaBuffer);
+
+        ((MediaBuffer *)mediaBuffer)->release();
+        mediaBuffer = NULL;
+
+        bufferMeta->setPointer("mediaBuffer", NULL);
+    }
     info->mData->setMediaBufferBase(NULL);
 
     PortMode mode = getPortMode(kPortIndexInput);
@@ -4505,8 +4617,10 @@ bool ACodec::BaseState::onOMXFillBufferDone(
         IOMX::buffer_id bufferID,
         size_t rangeOffset, size_t rangeLength,
         OMX_U32 flags,
-        int64_t timeUs) {
-    ALOGV("[%s] onOMXFillBufferDone %u time %" PRId64 " us, flags = 0x%08x",
+        int64_t timeUs,
+        void *platformPrivate,
+        void *dataPtr) {
+    ALOGV("[%s] onOMXFillBufferDone %p time %lld us, flags = 0x%08lx",
          mCodec->mComponentName.c_str(), bufferID, timeUs, flags);
 
     ssize_t index;
@@ -5047,6 +5161,12 @@ bool ACodec::LoadedState::onConfigureComponent(
 
     AString mime;
     CHECK(msg->findString("mime", &mime));
+
+    int32_t lowlatencymode = false;
+    if (msg->findInt32("lowlatencymode", &lowlatencymode)) {
+        if (lowlatencymode)
+            mCodec->mFlags |= kFlagLowLatencyMode;
+    }
 
     status_t err = mCodec->configureCodec(mime.c_str(), msg);
 
@@ -5612,6 +5732,14 @@ bool ACodec::ExecutingState::onOMXEvent(
             CHECK_EQ(data1, (OMX_U32)kPortIndexOutput);
 
             if (data2 == 0 || data2 == OMX_IndexParamPortDefinition) {
+
+                if (data2 == 0) {
+                    sp<AMessage> outputFormat = mCodec->mNotify->dup();
+                    CHECK_EQ(mCodec->getPortFormat(kPortIndexOutput, outputFormat), (status_t)OK);
+                    outputFormat->setInt32("what", kWhatAudioReconfig);
+                    outputFormat->post();
+                }
+
                 mCodec->mMetaDataBuffersToSubmit = 0;
                 CHECK_EQ(mCodec->mOMX->sendCommand(
                             mCodec->mNode,

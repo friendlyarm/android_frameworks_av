@@ -3,9 +3,14 @@ include $(CLEAR_VARS)
 
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
+USE_AM_SOFT_DEMUXER_CODEC := true
 LOCAL_SRC_FILES:=                         \
         ACodec.cpp                        \
         AACExtractor.cpp                  \
+        ADIFExtractor.cpp                  \
+        ADTSExtractor.cpp                  \
+        LATMExtractor.cpp                  \
+        THDExtractor.cpp                  \
         AACWriter.cpp                     \
         AMRExtractor.cpp                  \
         AMRWriter.cpp                     \
@@ -60,7 +65,12 @@ LOCAL_SRC_FILES:=                         \
         WVMExtractor.cpp                  \
         XINGSeeker.cpp                    \
         avc_utils.cpp                     \
+        AsfExtractor/ASFExtractor.cpp     \
+	DtshdExtractor.cpp  \
+        AIFFExtractor.cpp                 \
 
+LOCAL_SRC_FILES +=                         \
+	DDPExtractor.cpp
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/ \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
@@ -73,6 +83,19 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/system/netd/include \
         $(TOP)/external/icu/icu4c/source/common \
         $(TOP)/external/icu/icu4c/source/i18n \
+	$(LOCAL_PATH)/codecs/adif/include
+
+ifeq ($(BUILD_WITH_AMLOGIC_PLAYER),true)
+    AMPLAYER_APK_DIR=$(TOP)/vendor/amlogic/frameworks/av/LibPlayer/
+    LOCAL_C_INCLUDES += \
+        $(AMPLAYER_APK_DIR)/amplayer/player/include     \
+        $(AMPLAYER_APK_DIR)/amplayer/control/include    \
+        $(AMPLAYER_APK_DIR)/amadec/include              \
+        $(AMPLAYER_APK_DIR)/amcodec/include             \
+        $(AMPLAYER_APK_DIR)/amavutils/include           \
+        $(AMPLAYER_APK_DIR)/amvdec/include           \
+        $(AMPLAYER_APK_DIR)/amffmpeg/
+endif
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
@@ -110,15 +133,55 @@ LOCAL_STATIC_LIBRARIES := \
         libstagefright_mpeg2ts \
         libstagefright_id3 \
         libFLAC \
-        libmedia_helper
+        libmedia_helper \
+        libstagefright_hevcutils
 
 LOCAL_SHARED_LIBRARIES += \
         libstagefright_enc_common \
         libstagefright_avc_common \
         libstagefright_foundation \
-        libdl
+        libdl \
+        libamffmpeg
+
+LOCAL_STATIC_LIBRARIES += \
+	libstagefright_adifdec
+LOCAL_C_INCLUDES+= \
+	$(TOP)/frameworks/av/media/libstagefright/include  \
+	$(TOP)/frameworks/av/media/libmediaplayerservice  \
+	$(TOP)/external/ffmpeg
 
 LOCAL_CFLAGS += -Wno-multichar
+
+  LOCAL_CFLAGS += -DDOLBY_UDC
+
+ifdef DOLBY_DS1_UDC
+  LOCAL_CFLAGS += -DDOLBY_DS1_UDC
+endif
+
+ifdef DOLBY_PULSE
+  LOCAL_CFLAGS += -DDOLBY_PULSE
+endif #DOLBY_PULSE
+
+#ifdef DOLBY_UDC_MULTICHANNEL
+  LOCAL_CFLAGS += -DDOLBY_UDC_MULTICHANNEL
+#endif #DOLBY_UDC_MULTICHANNEL
+
+ifdef DOLBY_DAP
+    ifdef DOLBY_DAP_OPENSLES
+        LOCAL_CFLAGS += -DDOLBY_DAP_OPENSLES
+    endif
+endif #DOLBY_END
+
+ifeq ($(USE_AM_SOFT_DEMUXER_CODEC),true)
+LOCAL_SRC_FILES += \
+        AmMediaDefsExt.cpp                \
+        AmMediaExtractorPlugin.cpp        \
+
+LOCAL_CFLAGS += -DUSE_AM_SOFT_DEMUXER_CODEC
+
+LOCAL_C_INCLUDES  += \
+        $(TOP)/external/ffmpeg/
+endif
 
 LOCAL_MODULE:= libstagefright
 

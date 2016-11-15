@@ -339,7 +339,8 @@ MediaCodecSource::MediaCodecSource(
       mDoMoreWorkPending(false),
       mFirstSampleTimeUs(-1ll),
       mEncoderReachedEOS(false),
-      mErrorCode(OK) {
+      mErrorCode(OK),
+      mIsAvc(false) {
     CHECK(mLooper != NULL);
 
     AString mime;
@@ -347,6 +348,10 @@ MediaCodecSource::MediaCodecSource(
 
     if (!strncasecmp("video/", mime.c_str(), 6)) {
         mIsVideo = true;
+    }
+
+    if (!strcasecmp("video/avc", mime.c_str())) {
+        mIsAvc = true;
     }
 
     if (!(mFlags & FLAG_USE_SURFACE_INPUT)) {
@@ -634,6 +639,21 @@ status_t MediaCodecSource::onStart(MetaData *params) {
     return OK;
 }
 
+static void DropSpecialNal(MediaBuffer *buffer) {
+    if (buffer->range_length() < 4) {
+        return;
+    }
+
+    const uint8_t *ptr =
+        (const uint8_t *)buffer->data() + buffer->range_offset();
+
+    // Drop the special nal from encode comp.
+    if (!memcmp(ptr, "\x00\x00\x00\x1e", 4)) {
+        buffer->set_range(
+                buffer->range_offset(), 0);
+    }
+}
+
 void MediaCodecSource::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
     case kWhatPullerNotify:
@@ -707,6 +727,9 @@ void MediaCodecSource::onMessageReceived(const sp<AMessage> &msg) {
 
             MediaBuffer *mbuf = new MediaBuffer(outbuf->size());
             memcpy(mbuf->data(), outbuf->data(), outbuf->size());
+
+            if (mIsAvc)
+                DropSpecialNal(mbuf);
 
             if (!(flags & MediaCodec::BUFFER_FLAG_CODECCONFIG)) {
                 if (mIsVideo) {

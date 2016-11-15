@@ -17,7 +17,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "MediaHTTP"
 #include <utils/Log.h>
-
+#include "include/HTTPBase.h"
 #include <media/stagefright/MediaHTTP.h>
 
 #include <binder/IServiceManager.h>

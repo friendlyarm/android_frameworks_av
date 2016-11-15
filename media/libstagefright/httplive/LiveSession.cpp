@@ -36,6 +36,8 @@
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/FileSource.h>
 #include <media/stagefright/MediaErrors.h>
+#include "include/HTTPBase.h"
+
 #include <media/stagefright/MediaHTTP.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>

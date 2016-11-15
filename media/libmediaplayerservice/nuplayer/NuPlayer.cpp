@@ -180,6 +180,7 @@ NuPlayer::NuPlayer()
       mFlushingVideo(NONE),
       mResumePending(false),
       mVideoScalingMode(NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW),
+      mNewSurface(NULL),
       mStarted(false),
       mPaused(false),
       mPausedByClient(false) {
@@ -295,10 +296,13 @@ void NuPlayer::setVideoSurfaceTextureAsync(
     if (bufferProducer == NULL) {
         msg->setObject("native-window", NULL);
     } else {
+        sp<Surface> tmpSurface = new Surface(bufferProducer, true /* controlledByApp */);
+        if (mNativeWindow != NULL) {
+            mNewSurface = tmpSurface;
+        }
         msg->setObject(
                 "native-window",
-                new NativeWindowWrapper(
-                    new Surface(bufferProducer, true /* controlledByApp */)));
+                new NativeWindowWrapper(tmpSurface));
     }
 
     msg->post();
@@ -773,6 +777,15 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 status_t err;
                 if (!msg->findInt32("err", &err) || err == OK) {
                     err = UNKNOWN_ERROR;
+                }
+
+                // when the two surface is not the same, means the first surface has abandoned
+                // ignore native_window_api_connect error: -19, No such device
+                // NuPlayer will use the second surface to configure the decoder
+                if (mNativeWindow != NULL && mNativeWindow->getSurfaceTextureClient() != mNewSurface) {
+                    if (err == -19) {
+                        break;
+                    }
                 }
 
                 // Decoder errors can be due to Source (e.g. from streaming),

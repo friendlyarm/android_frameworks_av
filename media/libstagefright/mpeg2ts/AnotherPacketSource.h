@@ -49,6 +49,9 @@ struct AnotherPacketSource : public MediaSource {
     // presentation timestamps since the last discontinuity (if any).
     int64_t getBufferedDurationUs(status_t *finalResult);
 
+    int64_t getBufferedDataSize();
+    int64_t getEstimatedBytesPerSec();
+
     int64_t getEstimatedDurationUs();
 
     status_t nextBufferTime(int64_t *timeUs);
@@ -86,9 +89,10 @@ private:
     sp<AMessage> mLatestDequeuedMeta;
 
     size_t  mQueuedDiscontinuityCount;
+    int64_t  mEstimatedBytePerSec;
 
     bool wasFormatChange(int32_t discontinuityType) const;
-    int64_t getBufferedDurationUs_l(status_t *finalResult);
+    int64_t getBufferedDurationUs_l(status_t *finalResult, int64_t *estimateBytePerUs = NULL);
 
     DISALLOW_EVIL_CONSTRUCTORS(AnotherPacketSource);
 };

@@ -33,6 +33,17 @@
 #include <media/stagefright/foundation/ANetworkSession.h>
 #include <ui/GraphicBuffer.h>
 
+#include <stdio.h>
+#include <assert.h>
+#include <limits.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sched.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#include <cutils/properties.h>
+
 namespace android {
 
 MediaSender::MediaSender(
@@ -45,7 +56,12 @@ MediaSender::MediaSender(
       mPrevTimeUs(-1ll),
       mInitDoneCount(0),
       mLogFile(NULL) {
-    // mLogFile = fopen("/data/misc/log.ts", "wb");
+
+    char val[256];
+    if (property_get("media.wfd.wfd-ts-dump", val, NULL) && (!strcasecmp("true", val) || !strcmp("1", val))) {
+        mLogFile = fopen("/data/misc/log.ts", "wb");
+        ALOGV("open file to log ts stream:%d", mLogFile);
+    }
 }
 
 MediaSender::~MediaSender() {
@@ -493,7 +509,12 @@ status_t MediaSender::packetizeAccessUnit(
         flags |= TSPacketizer::PREPEND_SPS_PPS_TO_IDR_FRAMES;
     }
 
-    int64_t timeUs = ALooper::GetNowUs();
+    //sync with video frame timestamp which from kernel
+    int64_t timeNow64;
+    struct timeval timeNow;
+    gettimeofday(&timeNow, NULL);
+    int64_t timeUs = (int64_t)timeNow.tv_sec*1000*1000 + (int64_t)timeNow.tv_usec;
+
     if (mPrevTimeUs < 0ll || mPrevTimeUs + 100000ll <= timeUs) {
         flags |= TSPacketizer::EMIT_PCR;
         flags |= TSPacketizer::EMIT_PAT_AND_PMT;

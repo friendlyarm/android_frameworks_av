@@ -208,6 +208,10 @@ int SoundPool::load(const char* path, int priority __unused)
     ALOGV("load: path=%s, priority=%d", path, priority);
     Mutex::Autolock lock(&mLock);
     sp<Sample> sample = new Sample(++mNextSampleID, path);
+    if (sample.get() == NULL) {
+        ALOGE("load new Sample failed\n");
+        return -1;
+    }
     mSamples.add(sample->sampleID(), sample);
     doLoad(sample);
     return sample->sampleID();
@@ -219,6 +223,10 @@ int SoundPool::load(int fd, int64_t offset, int64_t length, int priority __unuse
             fd, offset, length, priority);
     Mutex::Autolock lock(&mLock);
     sp<Sample> sample = new Sample(++mNextSampleID, fd, offset, length);
+    if (sample.get() == NULL) {
+        ALOGE("new Sample failed\n");
+        return -1;
+    }
     mSamples.add(sample->sampleID(), sample);
     doLoad(sample);
     return sample->sampleID();

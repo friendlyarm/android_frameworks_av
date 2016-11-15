@@ -233,7 +233,7 @@ status_t OMX::allocateNode(
             instance, &handle);
 
     if (err != OMX_ErrorNone) {
-        ALOGE("FAILED to allocate omx component '%s'", name);
+        ALOGE("FAILED to allocate omx component '%s', err: %d", name, err);
 
         instance->onGetHandleFailed();
 
